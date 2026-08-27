@@ -1,0 +1,183 @@
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Activity, AlertTriangle, BarChart3, BookOpenCheck, Database, FileUp, Filter, FlaskConical, Gauge, History, Info, Menu, RefreshCw, Search, Settings2, ShieldAlert, SlidersHorizontal, Target, TrendingUp, X } from 'lucide-react'
+import { demoMarket, demoTrades } from './data/demo'
+import { backtestRows, calculateStats, parseCsv, screenRows } from './lib/strategy'
+import { compactIdr, idr, pct } from './lib/format'
+import type { DataMode, MarketRow, ScreenerSettings, Signal, TradeRecord } from './types'
+import { SignalTable } from './components/SignalTable'
+import { HistoryTable } from './components/HistoryTable'
+import { EquityChart } from './components/EquityChart'
+
+const defaultSettings: ScreenerSettings = {
+  minValue: 100_000_000,
+  minBidOfferRatio: 1,
+  transactionCost: .3,
+  targetPct: 2,
+  stopPct: 1.5,
+  requireExactOrderBook: true,
+}
+
+const nav = [
+  [Gauge, 'Dashboard'], [Activity, 'Sinyal live'], [Filter, 'Penyaring'],
+  [History, 'Riwayat'], [BarChart3, 'Statistik'], [FlaskConical, 'Backtest'],
+] as const
+
+function App() {
+  const [settings, setSettings] = useState(defaultSettings)
+  const [market, setMarket] = useState<MarketRow[]>(demoMarket)
+  const [trades, setTrades] = useState<TradeRecord[]>(demoTrades)
+  const [mode, setMode] = useState<DataMode>('demo')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [updatedAt, setUpdatedAt] = useState(new Date())
+  const [selected, setSelected] = useState<Signal | null>(null)
+  const [activeNav, setActiveNav] = useState('Dashboard')
+  const [mobileNav, setMobileNav] = useState(false)
+  const [showFormula, setShowFormula] = useState(false)
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  const signals = useMemo(() => screenRows(market, settings), [market, settings])
+  const stats = useMemo(() => calculateStats(trades), [trades])
+  const exactCount = signals.filter(s => s.exact).length
+
+  const refresh = async (requestedMode: DataMode = mode) => {
+    if (requestedMode === 'demo' || requestedMode === 'import') {
+      setUpdatedAt(new Date()); return
+    }
+    setLoading(true); setError('')
+    try {
+      const response = await fetch(`/api/market?mode=${requestedMode}`)
+      if (!response.ok) throw new Error((await response.json()).error || 'Feed pasar tidak tersedia')
+      const payload = await response.json()
+      setMarket(payload.data)
+      setMode(payload.mode)
+      setUpdatedAt(new Date(payload.asOf))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Gagal mengambil data')
+    } finally { setLoading(false) }
+  }
+
+  useEffect(() => {
+    if (mode === 'demo' || mode === 'import') return
+    const timer = window.setInterval(() => refresh(mode), 60_000)
+    return () => window.clearInterval(timer)
+  }, [mode])
+
+  const setSource = (next: DataMode) => {
+    setMode(next)
+    if (next === 'demo') { setMarket(demoMarket); setTrades(demoTrades); setError(''); setUpdatedAt(new Date()) }
+    else refresh(next)
+  }
+
+  const importCsv = async (file?: File) => {
+    if (!file) return
+    try {
+      const parsed = parseCsv(await file.text())
+      const importedTrades = backtestRows(parsed, settings)
+      setMarket(parsed); setTrades(importedTrades); setMode('import'); setUpdatedAt(new Date())
+      setError(importedTrades.length ? `Backtest selesai: ${importedTrades.length} trade valid dari ${parsed.length} snapshot.` : 'Tidak ada trade backtest. Pastikan baris lolos rumus dan kolom futureHigh/futureLow/close terisi.')
+    } catch (err) { setError(err instanceof Error ? err.message : 'CSV tidak valid') }
+  }
+
+  const tune = () => {
+    const candidates = [
+      { target: 1.5, stop: 1 }, { target: 2, stop: 1 }, { target: 2, stop: 1.5 }, { target: 2.5, stop: 1.5 },
+    ].map(c => {
+      const sourceTrades = trades.length ? trades : demoTrades
+      const adjusted = sourceTrades.map(t => ({ ...t, netReturn: t.netReturn > 0 ? Math.min(t.netReturn, c.target - settings.transactionCost) : Math.max(t.netReturn, -c.stop - settings.transactionCost) }))
+      const split = Math.floor(adjusted.length * .7)
+      return { ...c, train: calculateStats(adjusted.slice(0, split)), test: calculateStats(adjusted.slice(split)) }
+    }).sort((a, b) => (b.test.avgNetReturn - a.test.avgNetReturn) || (b.test.winRate - a.test.winRate))
+    const best = candidates[0]
+    setSettings(s => ({ ...s, targetPct: best.target, stopPct: best.stop }))
+    setError(`Tuning walk-forward demo memilih target ${best.target}% / stop ${best.stop}%. Uji pada data feed Anda sebelum digunakan.`)
+  }
+
+  return <div className="app-shell">
+    <aside className={mobileNav ? 'sidebar open' : 'sidebar'}>
+      <div className="brand"><span>Pagi</span>Sore<button onClick={() => setMobileNav(false)} aria-label="Tutup navigasi"><X /></button></div>
+      <nav>{nav.map(([Icon, label]) => <button key={label} className={activeNav === label ? 'active' : ''} onClick={() => { setActiveNav(label); setMobileNav(false) }}><Icon size={17} />{label}</button>)}</nav>
+      <div className="sidebar-bottom">
+        <div className="source-card"><Database size={16} /><div><small>Sumber data</small><strong>{mode === 'demo' ? 'Demo deterministik' : mode === 'proxy' ? 'Proxy tertunda' : mode === 'licensed' ? 'Feed berlisensi' : 'CSV lokal'}</strong></div><i className={mode === 'licensed' ? 'online' : ''} /></div>
+        <button className="nav-secondary"><Settings2 size={17} />Pengaturan</button>
+      </div>
+    </aside>
+
+    <main>
+      <header className="topbar">
+        <button className="menu-button" onClick={() => setMobileNav(true)} aria-label="Buka navigasi"><Menu /></button>
+        <div className="market-state"><span>Pasar</span><strong>{isMarketOpen() ? 'Buka' : 'Tutup'}</strong><i /> <span>IDX · WIB</span></div>
+        <div className="top-actions"><span>Terakhir diperbarui <b>{updatedAt.toLocaleTimeString('id-ID')}</b></span><button onClick={() => refresh()} disabled={loading}><RefreshCw size={15} className={loading ? 'spin' : ''} />Perbarui</button></div>
+      </header>
+
+      <div className="content">
+        <div className="page-title"><div><h1>Dashboard screening</h1><p>Riset pola open = low dengan validasi momentum, likuiditas, dan order book.</p></div><div className="source-switch" aria-label="Sumber data">
+          <button className={mode === 'demo' ? 'active' : ''} onClick={() => setSource('demo')}>Demo</button>
+          <button className={mode === 'proxy' ? 'active' : ''} onClick={() => setSource('proxy')}>Proxy semua IDX</button>
+          <button className={mode === 'licensed' ? 'active' : ''} onClick={() => setSource('licensed')}>Feed asli</button>
+        </div></div>
+
+        {error && <div className={/^(Tuning|Backtest selesai)/.test(error) ? 'notice info' : 'notice error'}><Info size={17} /><span>{error}</span><button onClick={() => setError('')}><X size={15} /></button></div>}
+
+        <section className="kpis">
+          <div className="kpi"><div><span>Sinyal aktif</span><Activity size={16} /></div><strong>{signals.length}</strong><small>{exactCount} dengan order book exact</small></div>
+          <div className="kpi"><div><span>Win rate histori</span><Target size={16} /></div><strong>{pct(stats.winRate)}</strong><small>Demo · n={stats.trades}</small></div>
+          <div className="kpi"><div><span>Rata-rata net return</span><TrendingUp size={16} /></div><strong className={stats.avgNetReturn >= 0 ? 'positive' : 'negative'}>{pct(stats.avgNetReturn, true)}</strong><small>Setelah biaya {pct(settings.transactionCost)}</small></div>
+          <div className="kpi"><div><span>Nilai minimum</span><Database size={16} /></div><strong>{compactIdr(settings.minValue)}</strong><small>Dapat diubah pada filter</small></div>
+        </section>
+
+        <section className="filterbar">
+          <label>Minimum nilai transaksi<select value={settings.minValue} onChange={e => setSettings(s => ({ ...s, minValue: Number(e.target.value) }))}><option value="100000000">Rp100 juta</option><option value="500000000">Rp500 juta</option><option value="1000000000">Rp1 miliar</option></select></label>
+          <label>Rasio bid/offer min<input type="number" min="1" step=".05" value={settings.minBidOfferRatio} onChange={e => setSettings(s => ({ ...s, minBidOfferRatio: Number(e.target.value) }))} /></label>
+          <label>Biaya round trip<input type="number" min="0" step=".05" value={settings.transactionCost} onChange={e => setSettings(s => ({ ...s, transactionCost: Number(e.target.value) }))} /></label>
+          <label>Target / stop<div className="dual-input"><input type="number" step=".25" value={settings.targetPct} onChange={e => setSettings(s => ({ ...s, targetPct: Number(e.target.value) }))} /><span>/</span><input type="number" step=".25" value={settings.stopPct} onChange={e => setSettings(s => ({ ...s, stopPct: Number(e.target.value) }))} /></div></label>
+          <label className="checkbox"><input type="checkbox" checked={settings.requireExactOrderBook} onChange={e => setSettings(s => ({ ...s, requireExactOrderBook: e.target.checked }))} /><span>Wajib order book exact</span></label>
+          <button className="primary" onClick={() => refresh()}><SlidersHorizontal size={16} />Terapkan</button>
+        </section>
+
+        <div className="dashboard-grid">
+          <div className="primary-column">
+            <SignalTable signals={signals} loading={loading} onSelect={setSelected} />
+            <HistoryTable trades={trades} />
+          </div>
+          <aside className="right-column">
+            <EquityChart stats={stats} />
+            <section className="panel formula-panel">
+              <div className="panel-heading"><h2>Rumus & asumsi</h2><button onClick={() => setShowFormula(!showFormula)}>{showFormula ? 'Ringkas' : 'Detail'}</button></div>
+              <code>open == low<br />AND all_bid_volume &gt; all_offer_volume<br />AND high &gt; prev_high<br />AND low &gt; prev_low<br />AND value &gt; 100000000</code>
+              {showFormula && <ul><li>Entry disimulasikan pada harga sinyal, bukan selalu harga open.</li><li>Exit target/stop; jika tidak tersentuh, gunakan close.</li><li>Biaya beli + jual dikurangkan dari return.</li><li>Order book historis wajib berasal dari feed/CSV Anda.</li></ul>}
+            </section>
+            <section className="panel lab-panel">
+              <div className="panel-heading"><h2>Backtest lab</h2><FlaskConical size={17} /></div>
+              <p>Impor data order book + OHLC Anda atau jalankan tuning walk-forward pada sampel demo.</p>
+              <input ref={fileRef} hidden type="file" accept=".csv,text/csv" onChange={e => importCsv(e.target.files?.[0])} />
+              <button onClick={() => fileRef.current?.click()}><FileUp size={16} />Impor CSV</button>
+              <button onClick={tune}><Search size={16} />Tuning train/test</button>
+              <a href="/sample-backtest.csv" download>Unduh template CSV</a>
+            </section>
+            <section className="risk-panel"><ShieldAlert size={23} /><div><strong>Baca sebelum menggunakan</strong><p>Ini alat riset, bukan saran keuangan. Tidak ada strategi yang pasti profit. Slippage, antrean, likuiditas, dan perubahan order book dapat membuat hasil aktual berbeda.</p></div></section>
+          </aside>
+        </div>
+      </div>
+      <footer><span><i />Sistem normal</span><b>{mode === 'demo' ? 'Data demo — bukan data real' : mode === 'proxy' ? 'Data proxy — order book tidak lengkap' : mode === 'licensed' ? 'Feed berlisensi aktif' : 'Data impor lokal'}</b><span>Waktu server {new Date().toLocaleTimeString('id-ID')}</span></footer>
+    </main>
+
+    {selected && <div className="drawer-backdrop" onClick={() => setSelected(null)}><aside className="detail-drawer" onClick={e => e.stopPropagation()}>
+      <button className="drawer-close" onClick={() => setSelected(null)}><X /></button><div className="ticker-mark">{selected.ticker.slice(0, 2)}</div>
+      <small>Detail sinyal</small><h2>{selected.ticker}</h2><p>{selected.company}</p>
+      <div className="price-hero"><span>Harga sinyal</span><strong>{idr(selected.price)}</strong><em>Skor {selected.score}/100</em></div>
+      <div className="level-grid"><div><span>Entry</span><b>{idr(selected.entryLow)}–{idr(selected.entryHigh)}</b></div><div><span>Target</span><b className="positive">{idr(selected.target)}</b></div><div><span>Stop</span><b className="negative">{idr(selected.stop)}</b></div><div><span>Bid/offer</span><b>{selected.bidOfferRatio?.toFixed(2)}</b></div></div>
+      <h3>Kenapa muncul?</h3>{selected.reasons.map(r => <div className="reason" key={r}><BookOpenCheck size={16} />{r}</div>)}
+      {!selected.exact && <div className="drawer-warning"><AlertTriangle size={17} />Pra-sinyal ini belum memiliki order book agregat. Jangan dianggap sebagai hasil rumus asli.</div>}
+    </aside></div>}
+  </div>
+}
+
+function isMarketOpen() {
+  const now = new Date()
+  const jakarta = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }))
+  const minutes = jakarta.getHours() * 60 + jakarta.getMinutes()
+  return jakarta.getDay() >= 1 && jakarta.getDay() <= 5 && minutes >= 540 && minutes <= 960
+}
+
+export default App

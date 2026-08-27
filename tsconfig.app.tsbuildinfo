@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/main.tsx","./src/types.ts","./src/vite-env.d.ts","./src/components/equitychart.tsx","./src/components/historytable.tsx","./src/components/signaltable.tsx","./src/data/demo.ts","./src/lib/format.ts","./src/lib/strategy.test.ts","./src/lib/strategy.ts"],"version":"6.0.3"}
