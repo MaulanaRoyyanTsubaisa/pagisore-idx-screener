@@ -12,7 +12,7 @@ const defaultSettings: ScreenerSettings = {
   minValue: 100_000_000,
   minBidOfferRatio: 1.3,
   transactionCost: .3,
-  targetPct: 1.5,
+  targetPct: 1,
   stopPct: .9,
   requireExactOrderBook: false,
   strategyMode: 'original', rsiMin: 55, rsiMax: 72, minRelativeVolume: 1.5,
@@ -46,7 +46,8 @@ function App() {
   const [historyIsReal, setHistoryIsReal] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
-  const signals = useMemo(() => screenRows(market, settings), [market, settings])
+  const allSignals = useMemo(() => screenRows(market, settings), [market, settings])
+  const signals = useMemo(() => allSignals.slice().sort((a, b) => b.score - a.score).slice(0, 5), [allSignals])
   const stats = useMemo(() => calculateStats(trades), [trades])
   const exactCount = signals.filter(s => s.exact).length
 
@@ -98,7 +99,7 @@ function App() {
   }
 
   const applyFilters = () => {
-    setError(`Filter diterapkan langsung: ${signals.length} kandidat dari ${market.length} saham.`)
+    setError(`Filter diterapkan: menampilkan ${signals.length} prioritas tertinggi dari ${allSignals.length} kandidat (${market.length} saham dipindai).`)
     goTo('Sinyal live')
   }
 
@@ -161,9 +162,9 @@ function App() {
         {error && <div className={/^(Tuning|Backtest selesai|Filter diterapkan)/.test(error) ? 'notice info' : 'notice error'}><Info size={17} /><span>{error}</span><button onClick={() => setError('')}><X size={15} /></button></div>}
 
         <section className="kpis">
-          <div className="kpi"><div><span>Sinyal aktif</span><Activity size={16} /></div><strong>{signals.length}</strong><small>{exactCount} dengan order book exact</small></div>
-          <div className="kpi"><div><span>Win rate histori</span><Target size={16} /></div><strong>{pct(stats.winRate)}</strong><small>{historyIsReal ? 'Intraday nyata' : 'Fallback demo'} · n={stats.trades}</small></div>
-          <div className="kpi"><div><span>Rata-rata net return</span><TrendingUp size={16} /></div><strong className={stats.avgNetReturn >= 0 ? 'positive' : 'negative'}>{pct(stats.avgNetReturn, true)}</strong><small>Setelah biaya {pct(settings.transactionCost)}</small></div>
+          <div className="kpi"><div><span>Prioritas hari ini</span><Activity size={16} /></div><strong>{signals.length}</strong><small>Top 5 dari {allSignals.length} kandidat · {exactCount} exact</small></div>
+          <div className="kpi"><div><span>WR price-core</span><Target size={16} /></div><strong>{pct(stats.winRate)}</strong><small>{historyIsReal ? 'Belum memakai order book' : 'Fallback demo'} · n={stats.trades}</small></div>
+          <div className="kpi"><div><span>Net price-core</span><TrendingUp size={16} /></div><strong className={stats.avgNetReturn >= 0 ? 'positive' : 'negative'}>{pct(stats.avgNetReturn, true)}</strong><small>Setelah biaya {pct(settings.transactionCost)} · belum lolos</small></div>
           <div className="kpi"><div><span>Nilai minimum</span><Database size={16} /></div><strong>{compactIdr(settings.minValue)}</strong><small>Dapat diubah pada filter</small></div>
         </section>
 
@@ -172,14 +173,14 @@ function App() {
           <label>Minimum nilai transaksi<select value={settings.minValue} onChange={e => setSettings(s => ({ ...s, minValue: Number(e.target.value) }))}><option value="100000000">Rp100 juta</option><option value="500000000">Rp500 juta</option><option value="1000000000">Rp1 miliar</option></select></label>
           <label>Rasio bid/offer min<input type="number" min="1" step=".05" value={settings.minBidOfferRatio} disabled={mode !== 'licensed'} title={mode !== 'licensed' ? 'Aktif setelah feed order book exact terhubung' : ''} onChange={e => setSettings(s => ({ ...s, minBidOfferRatio: Number(e.target.value) }))} /></label>
           <label>Biaya round trip<input type="number" min="0" step=".05" value={settings.transactionCost} onChange={e => setSettings(s => ({ ...s, transactionCost: Number(e.target.value) }))} /></label>
-          <label>Target gross / stop<div className="dual-input"><input type="number" step=".1" value={settings.targetPct} onChange={e => setSettings(s => ({ ...s, targetPct: Number(e.target.value) }))} /><span>/</span><input type="number" step=".1" value={settings.stopPct} onChange={e => setSettings(s => ({ ...s, stopPct: Number(e.target.value) }))} /></div></label>
+          <label>TP minimum / SL<div className="dual-input"><input aria-label="Target profit minimum dalam persen" type="number" min=".1" step=".1" value={settings.targetPct} onChange={e => setSettings(s => ({ ...s, targetPct: Number(e.target.value) }))} /><span>/</span><input aria-label="Stop loss dalam persen" type="number" min=".1" step=".1" value={settings.stopPct} onChange={e => setSettings(s => ({ ...s, stopPct: Number(e.target.value) }))} /></div></label>
           <label className="checkbox"><input type="checkbox" checked={settings.requireExactOrderBook} disabled={mode !== 'licensed'} onChange={e => setSettings(s => ({ ...s, requireExactOrderBook: e.target.checked }))} /><span>Wajib order book exact</span></label>
           <button className="primary" onClick={applyFilters}><SlidersHorizontal size={16} />Terapkan & lihat hasil</button>
         </section>
 
         <div className="dashboard-grid">
           <div className="primary-column">
-            <div id="live-signals"><SignalTable signals={signals} loading={loading} onSelect={setSelected} /></div>
+            <div id="live-signals"><SignalTable signals={signals} totalCandidates={allSignals.length} loading={loading} onSelect={setSelected} /></div>
             <div id="history"><div className="history-source">{historyLabel}</div><HistoryTable trades={trades} /></div>
           </div>
           <aside className="right-column">
@@ -188,7 +189,7 @@ function App() {
               <div className="panel-heading"><h2>Rumus & asumsi</h2><button onClick={() => setShowFormula(!showFormula)}>{showFormula ? 'Ringkas' : 'Detail'}</button></div>
               <code>open == low<br />AND all_bid_volume &gt; all_offer_volume<br />AND high &gt; prev_high<br />AND low &gt; prev_low<br />AND value &gt; 100000000</code>
               <div className="confirm-stack"><span>Konfirmasi seimbang</span><b>EMA 10 &gt; 20 &gt; 50</b><b>Harga &gt; VWAP</b><b>RSI 55–72</b><b>RVOL ≥ 1,5×</b><b>Flow + candle + spread</b></div>
-              {showFormula && <ul><li>Mode seimbang membutuhkan mayoritas konfirmasi; mode ketat membutuhkan semuanya.</li><li>Order book memakai imbalance, spread, buyer flow, dan persistensi—bukan satu snapshot saja.</li><li>Target 1,5% gross ≈ 1,2% setelah biaya 0,3%, sebelum slippage.</li><li>Emas hanya relevan sebagai filter sektoral untuk emiten yang eksposurnya memang terbukti.</li></ul>}
+              {showFormula && <ul><li>Mode seimbang membutuhkan mayoritas konfirmasi; mode ketat membutuhkan semuanya.</li><li>Order book memakai imbalance, spread, buyer flow, dan persistensi—bukan satu snapshot saja.</li><li>Target minimum {settings.targetPct.toFixed(1)}% gross ≈ {Math.max(0, settings.targetPct - settings.transactionCost).toFixed(1)}% setelah biaya {settings.transactionCost.toFixed(1)}%, sebelum slippage.</li><li>Emas hanya relevan sebagai filter sektoral untuk emiten yang eksposurnya memang terbukti.</li></ul>}
             </section>
             <section className="panel lab-panel" id="backtest">
               <div className="panel-heading"><h2>Backtest lab</h2><FlaskConical size={17} /></div>
@@ -208,8 +209,15 @@ function App() {
     {selected && <div className="drawer-backdrop" onClick={() => setSelected(null)}><aside className="detail-drawer" onClick={e => e.stopPropagation()}>
       <button className="drawer-close" aria-label="Tutup detail sinyal" onClick={() => setSelected(null)}><X /></button><div className="ticker-mark">{selected.ticker.slice(0, 2)}</div>
       <small>Detail sinyal</small><h2>{selected.ticker}</h2><p>{selected.company}</p>
-      <div className="price-hero"><span>Harga sinyal</span><strong>{idr(selected.price)}</strong><em>Skor {selected.score}/100</em></div>
-      <div className="level-grid"><div><span>Entry</span><b>{idr(selected.entryLow)}–{idr(selected.entryHigh)}</b></div><div><span>Target</span><b className="positive">{idr(selected.target)}</b></div><div><span>Stop</span><b className="negative">{idr(selected.stop)}</b></div><div><span>Bid/offer</span><b>{selected.bidOfferRatio?.toFixed(2) ?? 'Belum tersedia'}</b></div></div>
+      <div className="price-hero"><span>Harga saat sinyal muncul</span><strong>{idr(selected.price)}</strong><em>Skor {selected.score}/100 · muncul {selected.signalTime}</em></div>
+      <section className="trade-plan" aria-label={`Rencana transaksi ${selected.ticker}`}>
+        <div className="trade-plan-title"><div><small>RENCANA TRANSAKSI</small><strong>Beli pagi · jual hari yang sama</strong></div><span>{settings.targetPct.toFixed(1)}% TP minimum</span></div>
+        <div className="trade-step buy"><i>1</i><div><span>BELI / ENTRY</span><strong>{idr(selected.entryLow)}</strong><small>Pasang buy limit di harga ini. Jika harga sudah naik di atas {idr(selected.entryHigh)}, skip—jangan mengejar.</small></div></div>
+        <div className="trade-step take-profit"><i>2</i><div><span>JUAL UNTUNG / TAKE PROFIT</span><strong>{idr(selected.target)}</strong><small>Target minimal +{settings.targetPct.toFixed(1)}% gross, kira-kira +{Math.max(0, settings.targetPct - settings.transactionCost).toFixed(1)}% setelah biaya {settings.transactionCost.toFixed(1)}% sebelum slippage.</small></div></div>
+        <div className="trade-step stop-loss"><i>3</i><div><span>JUAL RUGI / STOP LOSS</span><strong>{idr(selected.stop)}</strong><small>Keluar bila harga menyentuh level ini. Estimasi hasil −{(settings.stopPct + settings.transactionCost).toFixed(1)}% setelah biaya, sebelum slippage.</small></div></div>
+        <div className="close-rule"><b>Jika TP/SL belum tersentuh:</b> jual menjelang penutupan sesi II. Jika harga melewati TP, keuntungan tambahan tidak dijamin; gunakan trailing stop hanya bila siap memantaunya.</div>
+      </section>
+      <div className="level-grid compact-levels"><div><span>Bid/offer</span><b>{selected.bidOfferRatio?.toFixed(2) ?? 'Belum tersedia'}</b></div><div><span>Status data</span><b>{selected.exact ? 'Order book exact' : 'Price-core'}</b></div></div>
       <div className="indicator-grid"><div><span>RSI 14</span><b>{selected.rsi14?.toFixed(1) ?? '—'}</b></div><div><span>RVOL</span><b>{selected.relativeVolume ? `${selected.relativeVolume.toFixed(2)}×` : '—'}</b></div><div><span>VWAP</span><b>{selected.vwap ? idr(selected.vwap) : '—'}</b></div><div><span>Konfirmasi</span><b>{selected.confirmations}/{selected.confirmationTotal}</b></div></div>
       <h3>Kenapa muncul?</h3>{selected.reasons.map(r => <div className="reason" key={r}><BookOpenCheck size={16} />{r}</div>)}
       {!selected.exact && <div className="drawer-warning"><AlertTriangle size={17} />Price-core ini belum memiliki order book agregat. Gunakan sebagai daftar cek, bukan sinyal rumus exact.</div>}

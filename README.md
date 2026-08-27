@@ -14,14 +14,15 @@ Secara default dashboard langsung memindai seluruh IDX memakai mode **Rumus inti
 
 ## Yang sudah bekerja
 
-- Scanner, filter, level entry/target/stop, detail alasan sinyal, dan histori.
+- Scanner seluruh IDX dengan shortlist lima prioritas, harga buy-limit, TP, SL, alasan sinyal, dan histori.
 - Pemindaian otomatis 843 saham IDX via TradingView scanner (data publik dapat tertunda). Karena tidak memiliki aggregate order book, hasilnya disebut **price-core**, bukan sinyal exact.
 - Integrasi resmi endpoint screener Invezgo untuk menjalankan formula lengkap real-time bila `INVEZGO_API_KEY` tersedia.
-- Backtest otomatis 5-menit Yahoo Finance, 843/843 ticker, dengan sinyal pukul 09:10 WIB dan evaluasi bar sesudah sinyal sampai penutupan.
+- Backtest otomatis 5-menit Yahoo Finance, 843/843 ticker, dengan jendela sinyal pagi dan evaluasi bar sesudah entry sampai penutupan.
 - Impor CSV untuk data snapshot sinyal + order book + pergerakan setelah sinyal; template tersedia di `/sample-backtest.csv`. Impor langsung menghasilkan riwayat backtest baru.
 - Statistik setelah biaya: win rate, average net return, compounded return, max drawdown, dan profit factor.
 - Tuning konfirmasi memakai split kronologis 70/30 agar parameter dipilih pada train dan dilaporkan pada test.
-- Target default 1,5% gross dan stop 0,9%. Dengan biaya round-trip 0,3%, target teoritis bersih sekitar 1,2% sebelum slippage dan dampak antrean.
+- Target default 1% gross dan stop 0,9%. Dengan biaya round-trip 0,3%, target teoritis bersih sekitar 0,7% sebelum slippage dan dampak antrean.
+- Shortlist top 5 adalah ranking prioritas riset dari kandidat yang lolos, bukan jaminan lima transaksi akan profit.
 
 ## Menjalankan lokal
 

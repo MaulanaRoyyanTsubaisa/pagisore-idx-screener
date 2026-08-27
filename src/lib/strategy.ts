@@ -47,7 +47,7 @@ export const evaluateRow = (row: MarketRow, settings: ScreenerSettings): Signal 
     ...row,
     bidOfferRatio: ratio,
     entryLow,
-    entryHigh: roundToTick(entryLow + tickSize(entryLow) * 2),
+    entryHigh: entryLow,
     target: roundUpToTick(entryLow * (1 + settings.targetPct / 100)),
     stop: roundToTick(entryLow * (1 - settings.stopPct / 100)),
     score,

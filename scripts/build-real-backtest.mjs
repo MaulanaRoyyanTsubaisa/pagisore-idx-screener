@@ -1,14 +1,28 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 
-const OUT = new URL('../public/data/real-backtest.json', import.meta.url)
+const OUT = new URL(process.env.BACKTEST_OUT || '../public/data/real-backtest.json', import.meta.url)
 const RANGE = process.env.BACKTEST_RANGE || '60d'
-const SIGNAL_END = '09:10'
+const SIGNAL_END = process.env.BACKTEST_SIGNAL_END || '09:10'
 const CONCURRENCY = Number(process.env.BACKTEST_CONCURRENCY || 12)
+const INCLUDE_PROFILES = process.env.BACKTEST_INCLUDE_PROFILES === 'true'
 const COST_PCT = 0.3
-const TARGET_PCT = 1.5
+const TARGET_PCT = 1
 const STOP_PCT = 0.9
+const EXIT_PROFILES = [1, 1.5, 2, 2.5, 3].flatMap(targetPct => [
+  .9, 1.2, 1.5, 2, 3, null,
+].map(stopPct => ({
+  id: `tp${targetPct}_${stopPct === null ? 'close' : `sl${stopPct}`}`,
+  targetPct,
+  stopPct,
+}))).concat({ id: 'close_only', targetPct: null, stopPct: null })
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
+
+const addMinutes = (time, minutes) => {
+  const [hour, minute] = time.split(':').map(Number)
+  const total = hour * 60 + minute + minutes
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`
+}
 
 async function fetchJson(url, options, attempts = 3) {
   let lastError
@@ -107,7 +121,7 @@ function analyzeTicker(meta, chart) {
     const previous = daily.at(-1)
     const signalBars = bars.filter(bar => bar.time <= SIGNAL_END)
     const afterSignal = bars.filter(bar => bar.time > SIGNAL_END)
-    if (previous && signalBars.length >= 2 && afterSignal.length) {
+    if (previous && signalBars.length >= 1 && afterSignal.length) {
       const signalOpen = signalBars[0].open
       const signalLow = Math.min(...signalBars.map(bar => bar.low))
       const signalHigh = Math.max(...signalBars.map(bar => bar.high))
@@ -140,25 +154,35 @@ function analyzeTicker(meta, chart) {
           flowProxy >= 0.55,
         ].filter(Boolean).length
 
-        const target = entry * (1 + TARGET_PCT / 100)
-        const stop = entry * (1 - STOP_PCT / 100)
-        let exit = afterSignal.at(-1).close
-        let exitMethod = 'Close'
-        for (const bar of afterSignal) {
-          const stopHit = bar.low <= stop
-          const targetHit = bar.high >= target
-          if (stopHit) { exit = stop; exitMethod = 'Stop'; break }
-          if (targetHit) { exit = target; exitMethod = 'Target'; break }
+        const evaluateExit = profile => {
+          const target = profile.targetPct === null ? null : entry * (1 + profile.targetPct / 100)
+          const stop = profile.stopPct === null ? null : entry * (1 - profile.stopPct / 100)
+          let exit = afterSignal.at(-1).close
+          let exitMethod = 'Close'
+          for (const bar of afterSignal) {
+            const stopHit = stop !== null && bar.low <= stop
+            const targetHit = target !== null && bar.high >= target
+            if (stopHit) { exit = stop; exitMethod = 'Stop'; break }
+            if (targetHit) { exit = target; exitMethod = 'Target'; break }
+          }
+          const grossReturn = (exit / entry - 1) * 100
+          return {
+            exit: Math.round(exit * 100) / 100,
+            target: target === null ? null : Math.round(target * 100) / 100,
+            stop: stop === null ? null : Math.round(stop * 100) / 100,
+            exitMethod,
+            grossReturn: Math.round(grossReturn * 1000) / 1000,
+            netReturn: Math.round((grossReturn - COST_PCT) * 1000) / 1000,
+          }
         }
-        const grossReturn = (exit / entry - 1) * 100
+        const profiles = Object.fromEntries(EXIT_PROFILES.map(profile => [profile.id, evaluateExit(profile)]))
+        const primary = profiles[`tp${TARGET_PCT}_sl${STOP_PCT}`]
         trades.push({
-          date, ticker: meta.ticker, company: meta.company, signalTime: '09:10',
-          entry: Math.round(entry * 100) / 100, exit: Math.round(exit * 100) / 100,
-          target: Math.round(target * 100) / 100, stop: Math.round(stop * 100) / 100,
-          exitMethod, grossReturn: Math.round(grossReturn * 1000) / 1000,
-          netReturn: Math.round((grossReturn - COST_PCT) * 1000) / 1000,
+          date, ticker: meta.ticker, company: meta.company, signalTime: addMinutes(SIGNAL_END, 5),
+          entry: Math.round(entry * 100) / 100, ...primary,
           exact: false, confirmations, confirmationTotal: 6,
           metrics: { value, rsi14, relativeVolume, vwap, flowProxy },
+          ...(INCLUDE_PROFILES ? { profiles } : {}),
         })
       }
     }
@@ -203,7 +227,7 @@ const payload = {
     universe: universe.length, successful, failed, from: dates[0] || null, to: dates.at(-1) || null,
     signalCutoffWib: SIGNAL_END, targetPct: TARGET_PCT, stopPct: STOP_PCT, transactionCostPct: COST_PCT,
     exactOrderBook: false,
-    methodology: 'Sinyal memakai bar 09:00–09:10 WIB saja; entry pada close bar 09:10; exit target/stop konservatif atau close sesi. Kondisi bid>offer tidak tersedia sehingga hasil adalah price-core, bukan rumus lengkap.',
+    methodology: `Sinyal memakai bar 09:00–${SIGNAL_END} WIB saja; entry setelah bar terakhir selesai sekitar ${addMinutes(SIGNAL_END, 5)}; exit target/stop konservatif atau close sesi. Kondisi bid>offer tidak tersedia sehingga hasil adalah price-core, bukan rumus lengkap.`,
   },
   trades,
 }
