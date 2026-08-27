@@ -11,6 +11,12 @@ describe('strategy engine', () => {
     expect(((signal.target / signal.price) - 1) * 100).toBeGreaterThanOrEqual(settings.targetPct)
   })
   it('rejects proxy data when exact book is required', () => expect(evaluateRow({ ...demoMarket[0], allBidVolume: undefined, allOfferVolume: undefined }, settings)).toBeNull())
+  it('accepts price-core proxy data without inventing a bid/offer ratio', () => {
+    const proxy = { ...demoMarket[0], allBidVolume: undefined, allOfferVolume: undefined, bidOfferRatio: undefined, source: 'proxy' as const }
+    const result = evaluateRow(proxy, { ...settings, requireExactOrderBook: false, strategyMode: 'original' })
+    expect(result?.exact).toBe(false)
+    expect(result?.bidOfferRatio).toBeUndefined()
+  })
   it('rejects an overheated RSI in balanced mode when confirmations become insufficient', () => {
     const weak = { ...demoMarket[0], rsi14: 84, relativeVolume: .7, vwap: demoMarket[0].price * 1.01 }
     expect(evaluateRow(weak, settings)).toBeNull()

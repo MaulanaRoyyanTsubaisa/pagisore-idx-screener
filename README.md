@@ -10,17 +10,17 @@ AND current_low > previous_low
 AND current_value > 100000000
 ```
 
-Secara default dashboard menjalankan mode **Seimbang**: rumus inti tetap wajib, lalu mayoritas konfirmasi yang tersedia harus lolos. Konfirmasinya adalah EMA 10 > EMA 20 > EMA 50, harga di atas VWAP, RSI 55–72, relative volume ≥ 1,5×, candle berkualitas, buyer-initiated flow ≥ 55%, spread ≤ 2 tick, dan imbalance yang bertahan ≥ 3 snapshot. Mode **Ketat** mewajibkan semuanya; mode **Rumus inti** mempertahankan formula awal untuk pembanding backtest.
+Secara default dashboard langsung memindai seluruh IDX memakai mode **Rumus inti**. Feed publik menghasilkan **price-core** (seluruh syarat harga/nilai transaksi); feed Invezgo menghasilkan rumus **exact**, termasuk total bid/offer. Mode **Seimbang** menambahkan EMA, VWAP, RSI, relative volume, candle, flow, spread, dan persistensi order book. Mode **Ketat** mewajibkan semua konfirmasi yang tersedia.
 
 ## Yang sudah bekerja
 
 - Scanner, filter, level entry/target/stop, detail alasan sinyal, dan histori.
-- Mode demo deterministik untuk mengecek seluruh alur UI.
-- Mode proxy semua saham IDX via TradingView scanner (data dapat tertunda). Karena tidak memiliki aggregate order book, hasilnya selalu disebut **pra-sinyal**, bukan sinyal rumus asli.
-- Adaptor `licensed` untuk feed IDX/redistributor yang menyediakan aggregate order book.
+- Pemindaian otomatis 843 saham IDX via TradingView scanner (data publik dapat tertunda). Karena tidak memiliki aggregate order book, hasilnya disebut **price-core**, bukan sinyal exact.
+- Integrasi resmi endpoint screener Invezgo untuk menjalankan formula lengkap real-time bila `INVEZGO_API_KEY` tersedia.
+- Backtest otomatis 5-menit Yahoo Finance, 843/843 ticker, dengan sinyal pukul 09:10 WIB dan evaluasi bar sesudah sinyal sampai penutupan.
 - Impor CSV untuk data snapshot sinyal + order book + pergerakan setelah sinyal; template tersedia di `/sample-backtest.csv`. Impor langsung menghasilkan riwayat backtest baru.
 - Statistik setelah biaya: win rate, average net return, compounded return, max drawdown, dan profit factor.
-- Tuning sederhana memakai split 70/30 agar parameter tidak dipilih dari seluruh sampel yang sama.
+- Tuning konfirmasi memakai split kronologis 70/30 agar parameter dipilih pada train dan dilaporkan pada test.
 - Target default 1,5% gross dan stop 0,9%. Dengan biaya round-trip 0,3%, target teoritis bersih sekitar 1,2% sebelum slippage dan dampak antrean.
 
 ## Menjalankan lokal
@@ -32,7 +32,15 @@ npm run dev
 
 ## Kontrak feed berlisensi
 
-Set `MARKET_DATA_URL` dan, bila perlu, `MARKET_DATA_TOKEN` di environment Netlify. Endpoint harus mengembalikan JSON array dengan field berikut:
+Untuk jalur yang paling langsung, set `INVEZGO_API_KEY` di environment Netlify. Function akan memanggil `POST https://api.invezgo.com/screener/screen` dengan formula:
+
+```text
+open == low && all_bid_volume > all_offer_volume && high > prev_high && low > prev_low && value > 100000000
+```
+
+Key hanya disimpan sebagai environment server dan tidak pernah dikirim ke browser.
+
+Sebagai alternatif, set `MARKET_DATA_URL` dan, bila perlu, `MARKET_DATA_TOKEN`.
 
 ```json
 [{ "ticker":"BBRI", "company":"Bank Rakyat Indonesia", "price":4820, "open":4780, "low":4780, "high":4860, "prevLow":4700, "prevHigh":4800, "volume":106313, "value":512430000, "allBidVolume":1680000, "allOfferVolume":1000000, "signalTime":"09:15:12", "source":"licensed" }]

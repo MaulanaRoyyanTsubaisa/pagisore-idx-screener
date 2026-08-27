@@ -2,8 +2,8 @@ import type { BacktestStats, MarketRow, ScreenerSettings, Signal, TradeRecord } 
 import { roundToTick, roundUpToTick, tickSize } from './format'
 
 export const evaluateRow = (row: MarketRow, settings: ScreenerSettings): Signal | null => {
-  const ratio = row.bidOfferRatio ?? ((row.allBidVolume && row.allOfferVolume)
-    ? row.allBidVolume / row.allOfferVolume : 0)
+  const ratio = row.bidOfferRatio ?? ((row.allBidVolume !== undefined && row.allOfferVolume !== undefined)
+    ? row.allBidVolume / Math.max(1, row.allOfferVolume) : undefined)
   const exact = row.allBidVolume !== undefined && row.allOfferVolume !== undefined
   const baseChecks = [
     Math.abs(row.open - row.low) < 0.0001,
@@ -11,7 +11,7 @@ export const evaluateRow = (row: MarketRow, settings: ScreenerSettings): Signal 
     row.high > row.prevHigh,
     row.low > row.prevLow,
     row.value > settings.minValue,
-    ratio >= settings.minBidOfferRatio,
+    exact ? (ratio ?? 0) >= settings.minBidOfferRatio : !settings.requireExactOrderBook,
   ]
   if (!baseChecks.every(Boolean)) return null
 
@@ -39,7 +39,7 @@ export const evaluateRow = (row: MarketRow, settings: ScreenerSettings): Signal 
   if (settings.strategyMode === 'balanced' && passed.length < Math.min(6, Math.max(3, available.length - 1))) return null
   if (settings.strategyMode === 'strict' && (available.length < confirmations.length || passed.length !== confirmations.length)) return null
 
-  const imbalance = (ratio - 1) / Math.max(.01, ratio + 1)
+  const imbalance = ratio === undefined ? 0 : (ratio - 1) / Math.max(.01, ratio + 1)
   const score = Math.min(99, Math.round(40 + Math.min(15, imbalance * 55) +
     Math.min(8, row.value / settings.minValue * 2) + passed.length * 4 + (exact ? 5 : 0)))
   const entryLow = row.price
@@ -52,7 +52,7 @@ export const evaluateRow = (row: MarketRow, settings: ScreenerSettings): Signal 
     stop: roundToTick(entryLow * (1 - settings.stopPct / 100)),
     score,
     exact,
-    reasons: [exact ? 'Rumus inti + order book exact terpenuhi' : 'Rumus harga terpenuhi; order book masih proxy', ...passed.map(c => c.label)],
+    reasons: [exact ? 'Rumus inti + order book exact terpenuhi' : 'Price-core terpenuhi; data order book belum tersedia', ...passed.map(c => c.label)],
     confirmations: passed.length,
     confirmationTotal: available.length,
     setupLabel: settings.strategyMode === 'strict' ? 'Ketat' : settings.strategyMode === 'balanced' ? 'Terkonfirmasi' : 'Inti',

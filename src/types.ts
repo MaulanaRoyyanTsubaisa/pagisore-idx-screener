@@ -77,6 +77,15 @@ export interface TradeRecord {
   grossReturn: number
   netReturn: number
   exact: boolean
+  confirmations?: number
+  confirmationTotal?: number
+  metrics?: {
+    value?: number
+    rsi14?: number
+    relativeVolume?: number
+    vwap?: number
+    flowProxy?: number
+  }
 }
 
 export interface BacktestStats {
