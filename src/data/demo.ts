@@ -14,10 +14,14 @@ const base = [
 ] as const
 
 export const demoMarket: MarketRow[] = base.map(([ticker, company, price, ratio, value], i) => ({
-  ticker, company, price, open: price, low: price, high: price * 1.018, prevLow: price * .982,
-  prevHigh: price * 1.008, volume: Math.round(value / price), value,
+  ticker, company, price, open: price * .99, low: price * .99, high: price * 1.003, prevLow: price * .98,
+  prevHigh: price * .998, volume: Math.round(value / price), value,
   allBidVolume: Math.round(1_000_000 * ratio), allOfferVolume: 1_000_000,
   bidOfferRatio: ratio, signalTime: `09:${String(15 - Math.floor(i / 4)).padStart(2, '0')}:${String(12 + i * 4).padStart(2, '0')}`,
+  emaFast: price * .996, emaMid: price * .989, emaSlow: price * .975,
+  rsi14: 58 + (i % 6) * 2.1, vwap: price * .992, relativeVolume: 1.55 + (i % 5) * .16,
+  buyerInitiatedVolume: 600_000 + i * 17_000, sellerInitiatedVolume: 400_000,
+  spreadTicks: i % 3 === 0 ? 2 : 1, orderBookPersistence: 3 + (i % 4),
   source: 'demo',
 }))
 

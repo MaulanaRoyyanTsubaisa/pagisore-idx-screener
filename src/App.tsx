@@ -10,11 +10,14 @@ import { EquityChart } from './components/EquityChart'
 
 const defaultSettings: ScreenerSettings = {
   minValue: 100_000_000,
-  minBidOfferRatio: 1,
+  minBidOfferRatio: 1.3,
   transactionCost: .3,
-  targetPct: 2,
-  stopPct: 1.5,
+  targetPct: 1.5,
+  stopPct: .9,
   requireExactOrderBook: true,
+  strategyMode: 'balanced', rsiMin: 55, rsiMax: 72, minRelativeVolume: 1.5,
+  minCandleBodyRatio: .45, minCloseLocation: .65, minBuyFlow: .55,
+  maxSpreadTicks: 2, minOrderBookPersistence: 3,
 }
 
 const nav = [
@@ -127,10 +130,11 @@ function App() {
         </section>
 
         <section className="filterbar">
+          <label>Mode konfirmasi<select value={settings.strategyMode} onChange={e => setSettings(s => ({ ...s, strategyMode: e.target.value as ScreenerSettings['strategyMode'] }))}><option value="original">Rumus inti</option><option value="balanced">Seimbang</option><option value="strict">Ketat</option></select></label>
           <label>Minimum nilai transaksi<select value={settings.minValue} onChange={e => setSettings(s => ({ ...s, minValue: Number(e.target.value) }))}><option value="100000000">Rp100 juta</option><option value="500000000">Rp500 juta</option><option value="1000000000">Rp1 miliar</option></select></label>
           <label>Rasio bid/offer min<input type="number" min="1" step=".05" value={settings.minBidOfferRatio} onChange={e => setSettings(s => ({ ...s, minBidOfferRatio: Number(e.target.value) }))} /></label>
           <label>Biaya round trip<input type="number" min="0" step=".05" value={settings.transactionCost} onChange={e => setSettings(s => ({ ...s, transactionCost: Number(e.target.value) }))} /></label>
-          <label>Target / stop<div className="dual-input"><input type="number" step=".25" value={settings.targetPct} onChange={e => setSettings(s => ({ ...s, targetPct: Number(e.target.value) }))} /><span>/</span><input type="number" step=".25" value={settings.stopPct} onChange={e => setSettings(s => ({ ...s, stopPct: Number(e.target.value) }))} /></div></label>
+          <label>Target gross / stop<div className="dual-input"><input type="number" step=".1" value={settings.targetPct} onChange={e => setSettings(s => ({ ...s, targetPct: Number(e.target.value) }))} /><span>/</span><input type="number" step=".1" value={settings.stopPct} onChange={e => setSettings(s => ({ ...s, stopPct: Number(e.target.value) }))} /></div></label>
           <label className="checkbox"><input type="checkbox" checked={settings.requireExactOrderBook} onChange={e => setSettings(s => ({ ...s, requireExactOrderBook: e.target.checked }))} /><span>Wajib order book exact</span></label>
           <button className="primary" onClick={() => refresh()}><SlidersHorizontal size={16} />Terapkan</button>
         </section>
@@ -145,7 +149,8 @@ function App() {
             <section className="panel formula-panel">
               <div className="panel-heading"><h2>Rumus & asumsi</h2><button onClick={() => setShowFormula(!showFormula)}>{showFormula ? 'Ringkas' : 'Detail'}</button></div>
               <code>open == low<br />AND all_bid_volume &gt; all_offer_volume<br />AND high &gt; prev_high<br />AND low &gt; prev_low<br />AND value &gt; 100000000</code>
-              {showFormula && <ul><li>Entry disimulasikan pada harga sinyal, bukan selalu harga open.</li><li>Exit target/stop; jika tidak tersentuh, gunakan close.</li><li>Biaya beli + jual dikurangkan dari return.</li><li>Order book historis wajib berasal dari feed/CSV Anda.</li></ul>}
+              <div className="confirm-stack"><span>Konfirmasi seimbang</span><b>EMA 10 &gt; 20 &gt; 50</b><b>Harga &gt; VWAP</b><b>RSI 55–72</b><b>RVOL ≥ 1,5×</b><b>Flow + candle + spread</b></div>
+              {showFormula && <ul><li>Mode seimbang membutuhkan mayoritas konfirmasi; mode ketat membutuhkan semuanya.</li><li>Order book memakai imbalance, spread, buyer flow, dan persistensi—bukan satu snapshot saja.</li><li>Target 1,5% gross ≈ 1,2% setelah biaya 0,3%, sebelum slippage.</li><li>Emas hanya relevan sebagai filter sektoral untuk emiten yang eksposurnya memang terbukti.</li></ul>}
             </section>
             <section className="panel lab-panel">
               <div className="panel-heading"><h2>Backtest lab</h2><FlaskConical size={17} /></div>
@@ -167,6 +172,7 @@ function App() {
       <small>Detail sinyal</small><h2>{selected.ticker}</h2><p>{selected.company}</p>
       <div className="price-hero"><span>Harga sinyal</span><strong>{idr(selected.price)}</strong><em>Skor {selected.score}/100</em></div>
       <div className="level-grid"><div><span>Entry</span><b>{idr(selected.entryLow)}–{idr(selected.entryHigh)}</b></div><div><span>Target</span><b className="positive">{idr(selected.target)}</b></div><div><span>Stop</span><b className="negative">{idr(selected.stop)}</b></div><div><span>Bid/offer</span><b>{selected.bidOfferRatio?.toFixed(2)}</b></div></div>
+      <div className="indicator-grid"><div><span>RSI 14</span><b>{selected.rsi14?.toFixed(1) ?? '—'}</b></div><div><span>RVOL</span><b>{selected.relativeVolume ? `${selected.relativeVolume.toFixed(2)}×` : '—'}</b></div><div><span>VWAP</span><b>{selected.vwap ? idr(selected.vwap) : '—'}</b></div><div><span>Konfirmasi</span><b>{selected.confirmations}/{selected.confirmationTotal}</b></div></div>
       <h3>Kenapa muncul?</h3>{selected.reasons.map(r => <div className="reason" key={r}><BookOpenCheck size={16} />{r}</div>)}
       {!selected.exact && <div className="drawer-warning"><AlertTriangle size={17} />Pra-sinyal ini belum memiliki order book agregat. Jangan dianggap sebagai hasil rumus asli.</div>}
     </aside></div>}

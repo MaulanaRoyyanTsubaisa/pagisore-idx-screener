@@ -10,6 +10,8 @@ AND current_low > previous_low
 AND current_value > 100000000
 ```
 
+Secara default dashboard menjalankan mode **Seimbang**: rumus inti tetap wajib, lalu mayoritas konfirmasi yang tersedia harus lolos. Konfirmasinya adalah EMA 10 > EMA 20 > EMA 50, harga di atas VWAP, RSI 55–72, relative volume ≥ 1,5×, candle berkualitas, buyer-initiated flow ≥ 55%, spread ≤ 2 tick, dan imbalance yang bertahan ≥ 3 snapshot. Mode **Ketat** mewajibkan semuanya; mode **Rumus inti** mempertahankan formula awal untuk pembanding backtest.
+
 ## Yang sudah bekerja
 
 - Scanner, filter, level entry/target/stop, detail alasan sinyal, dan histori.
@@ -19,6 +21,7 @@ AND current_value > 100000000
 - Impor CSV untuk data snapshot sinyal + order book + pergerakan setelah sinyal; template tersedia di `/sample-backtest.csv`. Impor langsung menghasilkan riwayat backtest baru.
 - Statistik setelah biaya: win rate, average net return, compounded return, max drawdown, dan profit factor.
 - Tuning sederhana memakai split 70/30 agar parameter tidak dipilih dari seluruh sampel yang sama.
+- Target default 1,5% gross dan stop 0,9%. Dengan biaya round-trip 0,3%, target teoritis bersih sekitar 1,2% sebelum slippage dan dampak antrean.
 
 ## Menjalankan lokal
 

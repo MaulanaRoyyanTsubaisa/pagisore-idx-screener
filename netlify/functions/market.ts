@@ -22,7 +22,7 @@ export const handler: Handler = async (event) => {
         options: { lang: 'id' },
         markets: ['indonesia'],
         symbols: { query: { types: ['stock'] }, tickers: [] },
-        columns: ['name','description','close','open','low','high','low|1','high|1','volume','Value.Traded'],
+        columns: ['name','description','close','open','low','high','low|1','high|1','volume','Value.Traded','EMA10','EMA20','EMA50','RSI','VWAP','relative_volume_10d_calc'],
         sort: { sortBy: 'Value.Traded', sortOrder: 'desc' },
         range: [0, 1200],
       }),
@@ -31,7 +31,7 @@ export const handler: Handler = async (event) => {
     const json = await response.json() as { data?: Array<{ s: string; d: Array<string | number | null> }> }
     const now = new Date()
     const data = (json.data ?? []).map(item => {
-      const [ticker, company, price, open, low, high, prevLow, prevHigh, volume, tradedValue] = item.d
+      const [ticker, company, price, open, low, high, prevLow, prevHigh, volume, tradedValue, emaFast, emaMid, emaSlow, rsi14, vwap, relativeVolume] = item.d
       const o = Number(open), l = Number(low), h = Number(high), p = Number(price), v = Number(volume)
       // Proxy tekanan beli hanya untuk peringkat pra-sinyal; bukan aggregate order book.
       const range = Math.max(1, h - l)
@@ -40,6 +40,8 @@ export const handler: Handler = async (event) => {
         ticker: String(ticker || item.s.split(':').pop()), company: String(company || ticker), price: p,
         open: o, low: l, high: h, prevLow: Number(prevLow), prevHigh: Number(prevHigh), volume: v,
         value: Number(tradedValue) || p * v, bidOfferRatio: pressure,
+        emaFast: Number(emaFast) || undefined, emaMid: Number(emaMid) || undefined, emaSlow: Number(emaSlow) || undefined,
+        rsi14: Number(rsi14) || undefined, vwap: Number(vwap) || undefined, relativeVolume: Number(relativeVolume) || undefined,
         signalTime: now.toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta' }), source: 'proxy',
       }
     }).filter(row => row.ticker && Number.isFinite(row.open))

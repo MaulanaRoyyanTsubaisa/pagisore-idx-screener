@@ -1,4 +1,5 @@
 export type DataMode = 'demo' | 'proxy' | 'licensed' | 'import'
+export type StrategyMode = 'original' | 'balanced' | 'strict'
 
 export interface MarketRow {
   ticker: string
@@ -18,6 +19,16 @@ export interface MarketRow {
   allBidVolume?: number
   allOfferVolume?: number
   bidOfferRatio?: number
+  emaFast?: number
+  emaMid?: number
+  emaSlow?: number
+  rsi14?: number
+  vwap?: number
+  relativeVolume?: number
+  buyerInitiatedVolume?: number
+  sellerInitiatedVolume?: number
+  spreadTicks?: number
+  orderBookPersistence?: number
   signalTime: string
   source: DataMode
 }
@@ -29,6 +40,15 @@ export interface ScreenerSettings {
   targetPct: number
   stopPct: number
   requireExactOrderBook: boolean
+  strategyMode: StrategyMode
+  rsiMin: number
+  rsiMax: number
+  minRelativeVolume: number
+  minCandleBodyRatio: number
+  minCloseLocation: number
+  minBuyFlow: number
+  maxSpreadTicks: number
+  minOrderBookPersistence: number
 }
 
 export interface Signal extends MarketRow {
@@ -39,6 +59,9 @@ export interface Signal extends MarketRow {
   score: number
   exact: boolean
   reasons: string[]
+  confirmations: number
+  confirmationTotal: number
+  setupLabel: 'Inti' | 'Terkonfirmasi' | 'Ketat'
 }
 
 export interface TradeRecord {

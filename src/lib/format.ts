@@ -26,3 +26,8 @@ export const roundToTick = (price: number) => {
   const tick = tickSize(price)
   return Math.round(price / tick) * tick
 }
+
+export const roundUpToTick = (price: number) => {
+  const tick = tickSize(price)
+  return Math.ceil(price / tick) * tick
+}

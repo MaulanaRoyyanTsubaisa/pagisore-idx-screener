@@ -1,11 +1,11 @@
 import type { BacktestStats, MarketRow, ScreenerSettings, Signal, TradeRecord } from '../types'
-import { roundToTick, tickSize } from './format'
+import { roundToTick, roundUpToTick, tickSize } from './format'
 
 export const evaluateRow = (row: MarketRow, settings: ScreenerSettings): Signal | null => {
   const ratio = row.bidOfferRatio ?? ((row.allBidVolume && row.allOfferVolume)
     ? row.allBidVolume / row.allOfferVolume : 0)
   const exact = row.allBidVolume !== undefined && row.allOfferVolume !== undefined
-  const checks = [
+  const baseChecks = [
     Math.abs(row.open - row.low) < 0.0001,
     exact ? (row.allBidVolume ?? 0) > (row.allOfferVolume ?? 0) : !settings.requireExactOrderBook,
     row.high > row.prevHigh,
@@ -13,23 +13,49 @@ export const evaluateRow = (row: MarketRow, settings: ScreenerSettings): Signal 
     row.value > settings.minValue,
     ratio >= settings.minBidOfferRatio,
   ]
-  if (!checks.every(Boolean)) return null
+  if (!baseChecks.every(Boolean)) return null
 
-  const score = Math.min(99, Math.round(
-    54 + Math.min(16, (ratio - 1) * 18) + Math.min(14, row.value / settings.minValue * 3) +
-    Math.min(10, ((row.high / row.prevHigh) - 1) * 500) + (exact ? 5 : 0),
-  ))
+  const range = Math.max(tickSize(row.price), row.high - row.low)
+  const bodyRatio = Math.abs(row.price - row.open) / range
+  const closeLocation = (row.price - row.low) / range
+  const upperWickRatio = (row.high - row.price) / range
+  const buyFlow = row.buyerInitiatedVolume !== undefined && row.sellerInitiatedVolume !== undefined
+    ? row.buyerInitiatedVolume / Math.max(1, row.buyerInitiatedVolume + row.sellerInitiatedVolume) : undefined
+  const confirmations = [
+    { pass: row.emaFast !== undefined && row.emaMid !== undefined && row.emaSlow !== undefined && row.emaFast > row.emaMid && row.emaMid > row.emaSlow, label: 'EMA 10 > EMA 20 > EMA 50' },
+    { pass: row.vwap !== undefined && row.price > row.vwap, label: 'Harga di atas VWAP' },
+    { pass: row.rsi14 !== undefined && row.rsi14 >= settings.rsiMin && row.rsi14 <= settings.rsiMax, label: `RSI ${settings.rsiMin}–${settings.rsiMax}` },
+    { pass: row.relativeVolume !== undefined && row.relativeVolume >= settings.minRelativeVolume, label: `Relative volume ≥ ${settings.minRelativeVolume}×` },
+    { pass: bodyRatio >= settings.minCandleBodyRatio && closeLocation >= settings.minCloseLocation && upperWickRatio <= .3, label: 'Candle kuat, close dekat high' },
+    { pass: buyFlow !== undefined && buyFlow >= settings.minBuyFlow, label: `Buyer flow ≥ ${Math.round(settings.minBuyFlow * 100)}%` },
+    { pass: row.spreadTicks !== undefined && row.spreadTicks <= settings.maxSpreadTicks, label: `Spread ≤ ${settings.maxSpreadTicks} tick` },
+    { pass: row.orderBookPersistence !== undefined && row.orderBookPersistence >= settings.minOrderBookPersistence, label: `Order book bertahan ${settings.minOrderBookPersistence} snapshot` },
+  ]
+  const available = confirmations.filter(c => c.pass || (c.label.startsWith('Candle') ? true :
+    c.label.startsWith('EMA') ? row.emaFast !== undefined : c.label.includes('VWAP') ? row.vwap !== undefined :
+    c.label.startsWith('RSI') ? row.rsi14 !== undefined : c.label.startsWith('Relative') ? row.relativeVolume !== undefined :
+    c.label.startsWith('Buyer') ? buyFlow !== undefined : c.label.startsWith('Spread') ? row.spreadTicks !== undefined : row.orderBookPersistence !== undefined))
+  const passed = confirmations.filter(c => c.pass)
+  if (settings.strategyMode === 'balanced' && passed.length < Math.min(6, Math.max(3, available.length - 1))) return null
+  if (settings.strategyMode === 'strict' && (available.length < confirmations.length || passed.length !== confirmations.length)) return null
+
+  const imbalance = (ratio - 1) / Math.max(.01, ratio + 1)
+  const score = Math.min(99, Math.round(40 + Math.min(15, imbalance * 55) +
+    Math.min(8, row.value / settings.minValue * 2) + passed.length * 4 + (exact ? 5 : 0)))
   const entryLow = row.price
   return {
     ...row,
     bidOfferRatio: ratio,
     entryLow,
     entryHigh: roundToTick(entryLow + tickSize(entryLow) * 2),
-    target: roundToTick(entryLow * (1 + settings.targetPct / 100)),
+    target: roundUpToTick(entryLow * (1 + settings.targetPct / 100)),
     stop: roundToTick(entryLow * (1 - settings.stopPct / 100)),
     score,
     exact,
-    reasons: exact ? ['Semua syarat terpenuhi', 'Order book agregat tersedia'] : ['Syarat harga terpenuhi', 'Bid/offer masih proxy'],
+    reasons: [exact ? 'Rumus inti + order book exact terpenuhi' : 'Rumus harga terpenuhi; order book masih proxy', ...passed.map(c => c.label)],
+    confirmations: passed.length,
+    confirmationTotal: available.length,
+    setupLabel: settings.strategyMode === 'strict' ? 'Ketat' : settings.strategyMode === 'balanced' ? 'Terkonfirmasi' : 'Inti',
   }
 }
 
@@ -99,6 +125,10 @@ export const parseCsv = (text: string): MarketRow[] => {
       ticker: get('ticker'), company: get('company') || get('ticker'),
       open: num('open'), low: num('low'), high: num('high'), close: num('close'),
       futureHigh: num('futureHigh'), futureLow: num('futureLow'), date: get('date'),
+      emaFast: num('emaFast') || undefined, emaMid: num('emaMid') || undefined, emaSlow: num('emaSlow') || undefined,
+      rsi14: num('rsi14') || undefined, vwap: num('vwap') || undefined, relativeVolume: num('relativeVolume') || undefined,
+      buyerInitiatedVolume: num('buyerInitiatedVolume') || undefined, sellerInitiatedVolume: num('sellerInitiatedVolume') || undefined,
+      spreadTicks: num('spreadTicks') || undefined, orderBookPersistence: num('orderBookPersistence') || undefined,
       price: num('price') || num('close') || num('open'), prevLow: num('prevLow'), prevHigh: num('prevHigh'),
       volume: num('volume'), value: num('value'), allBidVolume: num('allBidVolume') || undefined,
       allOfferVolume: num('allOfferVolume') || undefined, bidOfferRatio: num('bidOfferRatio') || undefined,
