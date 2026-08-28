@@ -43,6 +43,7 @@ function App() {
   const [activeNav, setActiveNav] = useState('Dashboard')
   const [mobileNav, setMobileNav] = useState(false)
   const [showFormula, setShowFormula] = useState(false)
+  const [showRejectedResearch, setShowRejectedResearch] = useState(false)
   const [historyLabel, setHistoryLabel] = useState('Memuat backtest intraday nyata…')
   const [historyIsReal, setHistoryIsReal] = useState(false)
   const [feedReady, setFeedReady] = useState(false)
@@ -119,6 +120,7 @@ function App() {
 
   const goTo = (label: string) => {
     setActiveNav(label); setMobileNav(false)
+    setShowRejectedResearch(label !== 'Dashboard')
     window.requestAnimationFrame(() => document.getElementById(navTarget[label])?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
   }
 
@@ -174,17 +176,19 @@ function App() {
       </header>
 
       <div className="content" id="dashboard">
-        <div className="page-title"><div><h1>Dashboard screening</h1><p>Panic Limit adalah sinyal utama; price-core di bawah hanya hasil riset yang belum lolos.</p></div><div className="source-switch" aria-label="Sumber data">
-          <button className={mode === 'proxy' ? 'active' : ''} onClick={() => setSource('proxy')}>Riset price-core</button>
-          <button className={mode === 'licensed' ? 'active' : ''} onClick={() => setSource('licensed')}>Rumus exact</button>
-        </div></div>
+        <div className="page-title"><div><h1>Dashboard screening</h1><p>Panic Limit adalah satu-satunya sinyal utama yang ditampilkan pada dashboard.</p></div></div>
 
         {error && <div className={/^(Tuning|Backtest selesai|Filter diterapkan)/.test(error) ? 'notice info' : 'notice error'}><Info size={17} /><span>{error}</span><button onClick={() => setError('')}><X size={15} /></button></div>}
 
         <PanicPanel payload={panicPayload} loading={loading} />
 
-        <div className="research-verdict"><ShieldAlert size={20} /><div><strong>BATAS PEMISAH — BAGIAN DI BAWAH BUKAN SINYAL ENTRY</strong><span>Price-core/rumus sepuh tanpa order book mencatat WR {stats.winRate.toFixed(2)}% dan rata-rata {stats.avgNetReturn.toFixed(2)}% net. Jangan ikuti kandidatnya dengan uang nyata.</span></div></div>
+        <div className="research-verdict"><ShieldAlert size={20} /><div><strong>RISET PRICE-CORE DITOLAK · DISEMBUNYIKAN</strong><span>WR {stats.winRate.toFixed(2)}% dan rata-rata {stats.avgNetReturn.toFixed(2)}% net adalah hasil strategi lain yang gagal—bukan performa Panic Limit.</span></div><button onClick={() => setShowRejectedResearch(value => !value)}>{showRejectedResearch ? 'Tutup riset gagal' : 'Buka riset yang ditolak'}</button></div>
 
+        {showRejectedResearch && <>
+        <div className="source-switch rejected-source-switch" aria-label="Sumber data riset yang ditolak">
+          <button className={mode === 'proxy' ? 'active' : ''} onClick={() => setSource('proxy')}>Riset price-core</button>
+          <button className={mode === 'licensed' ? 'active' : ''} onClick={() => setSource('licensed')}>Rumus exact</button>
+        </div>
         <div className={feedReady ? 'live-source exact-source' : 'live-source'}>
           <span className="live-dot" />
           <div><strong>{mode === 'licensed' ? (feedReady ? 'Rumus lengkap + order book' : 'Feed exact belum aktif') : 'RISET GAGAL · price-core seluruh IDX'}</strong><small>{mode === 'licensed' ? (feedReady ? 'Invezgo real-time, cache 5 menit' : 'Kandidat dikosongkan agar data proxy tidak dianggap sinyal exact') : `Jangan entry · WR ${stats.winRate.toFixed(2)}% · avg ${stats.avgNetReturn.toFixed(2)}% net · order book tidak tersedia`}</small></div>
@@ -232,8 +236,9 @@ function App() {
             <section className="risk-panel"><ShieldAlert size={23} /><div><strong>Baca sebelum menggunakan</strong><p>Ini alat riset, bukan saran keuangan. Tidak ada strategi yang pasti profit. Slippage, antrean, likuiditas, dan perubahan order book dapat membuat hasil aktual berbeda.</p></div></section>
           </aside>
         </div>
+        </>}
       </div>
-      <footer><span><i />Sistem normal</span><b>{mode === 'demo' ? 'Data demo — bukan data real' : mode === 'proxy' ? 'Data proxy — order book tidak lengkap' : mode === 'licensed' ? (feedReady ? 'Feed berlisensi aktif' : 'Feed berlisensi belum tersambung') : 'Data impor lokal'}</b><span>Waktu server {new Date().toLocaleTimeString('id-ID')}</span></footer>
+      <footer><span><i />Sistem normal</span><b>{showRejectedResearch ? (mode === 'demo' ? 'Data demo — bukan data real' : mode === 'proxy' ? 'Riset price-core terbuka' : mode === 'licensed' ? (feedReady ? 'Feed berlisensi aktif' : 'Feed berlisensi belum tersambung') : 'Data impor lokal') : 'Panic Limit · sinyal utama'}</b><span>Waktu server {new Date().toLocaleTimeString('id-ID')}</span></footer>
     </main>
 
     {selected && <div className="drawer-backdrop" onClick={() => setSelected(null)}><aside className="detail-drawer" onClick={e => e.stopPropagation()}>
