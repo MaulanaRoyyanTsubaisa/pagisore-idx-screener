@@ -2,9 +2,13 @@ import { mkdir, writeFile } from 'node:fs/promises'
 
 const OUT = new URL(process.env.BACKTEST_OUT || '../public/data/real-backtest.json', import.meta.url)
 const RANGE = process.env.BACKTEST_RANGE || '60d'
+const INTERVAL = process.env.BACKTEST_INTERVAL || '5m'
+const BAR_MINUTES = Number(INTERVAL.match(/^\d+/)?.[0] || 5)
 const SIGNAL_END = process.env.BACKTEST_SIGNAL_END || '09:10'
+const LIMIT_CANCEL_TIME = process.env.BACKTEST_LIMIT_CANCEL || '10:30'
 const CONCURRENCY = Number(process.env.BACKTEST_CONCURRENCY || 12)
 const INCLUDE_PROFILES = process.env.BACKTEST_INCLUDE_PROFILES === 'true'
+const PROFILE_SET = process.env.BACKTEST_PROFILE_SET || 'all'
 const COST_PCT = 0.3
 const TARGET_PCT = 1
 const STOP_PCT = 0.9
@@ -15,6 +19,33 @@ const EXIT_PROFILES = [1, 1.5, 2, 2.5, 3].flatMap(targetPct => [
   targetPct,
   stopPct,
 }))).concat({ id: 'close_only', targetPct: null, stopPct: null })
+const LIMIT_PROFILES = [.25, .5, .75, 1, 1.5, 2, 3, 5].flatMap(entryDiscountPct =>
+  [1, 1.5, 2, 3].flatMap(targetPct => [.9, 1.5, 2, 3, 5, 7, 10, null].map(stopPct => ({
+    id: `lim${entryDiscountPct}_tp${targetPct}_${stopPct === null ? 'close' : `sl${stopPct}`}`,
+    entryDiscountPct,
+    targetPct,
+    stopPct,
+  }))))
+const MORNING_PROFILES = ['11:00', '11:30', '12:00'].flatMap(cancelTime =>
+  [7, 10, null].map(stopPct => ({
+    id: `lim5_tp1.5_${stopPct === null ? 'close' : `sl${stopPct}`}_c${cancelTime.replace(':', '')}`,
+    entryDiscountPct: 5,
+    targetPct: 1.5,
+    stopPct,
+    cancelTime,
+  })))
+const DEEP_LIMIT_PROFILES = [7, 10, 12, 15].flatMap(entryDiscountPct =>
+  [1.5, 2, 3, 4].flatMap(targetPct => [5, 7, 10, null].map(stopPct => ({
+    id: `lim${entryDiscountPct}_tp${targetPct}_${stopPct === null ? 'close' : `sl${stopPct}`}_c1100`,
+    entryDiscountPct,
+    targetPct,
+    stopPct,
+    cancelTime: '11:00',
+  }))))
+const PRIMARY_PROFILE = EXIT_PROFILES.find(profile => profile.id === `tp${TARGET_PCT}_sl${STOP_PCT}`)
+const RESEARCH_PROFILES = PROFILE_SET === 'deep'
+  ? [PRIMARY_PROFILE, ...DEEP_LIMIT_PROFILES]
+  : EXIT_PROFILES.concat(LIMIT_PROFILES, MORNING_PROFILES, DEEP_LIMIT_PROFILES)
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
 
@@ -155,18 +186,37 @@ function analyzeTicker(meta, chart) {
         ].filter(Boolean).length
 
         const evaluateExit = profile => {
-          const target = profile.targetPct === null ? null : entry * (1 + profile.targetPct / 100)
-          const stop = profile.stopPct === null ? null : entry * (1 - profile.stopPct / 100)
+          const entryDiscountPct = profile.entryDiscountPct || 0
+          const profileEntry = entry * (1 - entryDiscountPct / 100)
+          const cancelTime = profile.cancelTime || LIMIT_CANCEL_TIME
+          const fillIndex = entryDiscountPct
+            ? afterSignal.findIndex(bar => bar.time < cancelTime && bar.low <= profileEntry)
+            : 0
+          if (fillIndex < 0) return {
+            filled: false,
+            entry: Math.round(profileEntry * 100) / 100,
+            exit: null,
+            target: profile.targetPct === null ? null : Math.round(profileEntry * (1 + profile.targetPct / 100) * 100) / 100,
+            stop: profile.stopPct === null ? null : Math.round(profileEntry * (1 - profile.stopPct / 100) * 100) / 100,
+            exitMethod: 'Not filled', grossReturn: 0, netReturn: 0,
+          }
+          const target = profile.targetPct === null ? null : profileEntry * (1 + profile.targetPct / 100)
+          const stop = profile.stopPct === null ? null : profileEntry * (1 - profile.stopPct / 100)
           let exit = afterSignal.at(-1).close
           let exitMethod = 'Close'
-          for (const bar of afterSignal) {
+          for (let barIndex = fillIndex; barIndex < afterSignal.length; barIndex += 1) {
+            const bar = afterSignal[barIndex]
             const stopHit = stop !== null && bar.low <= stop
-            const targetHit = target !== null && bar.high >= target
+            // Pada candle pengisian limit, high mungkin terjadi sebelum harga turun
+            // menyentuh limit. Abaikan TP di candle itu untuk mencegah optimistic bias.
+            const targetHit = target !== null && !(entryDiscountPct && barIndex === fillIndex) && bar.high >= target
             if (stopHit) { exit = stop; exitMethod = 'Stop'; break }
             if (targetHit) { exit = target; exitMethod = 'Target'; break }
           }
-          const grossReturn = (exit / entry - 1) * 100
+          const grossReturn = (exit / profileEntry - 1) * 100
           return {
+            filled: true,
+            entry: Math.round(profileEntry * 100) / 100,
             exit: Math.round(exit * 100) / 100,
             target: target === null ? null : Math.round(target * 100) / 100,
             stop: stop === null ? null : Math.round(stop * 100) / 100,
@@ -175,10 +225,10 @@ function analyzeTicker(meta, chart) {
             netReturn: Math.round((grossReturn - COST_PCT) * 1000) / 1000,
           }
         }
-        const profiles = Object.fromEntries(EXIT_PROFILES.map(profile => [profile.id, evaluateExit(profile)]))
+        const profiles = Object.fromEntries(RESEARCH_PROFILES.map(profile => [profile.id, evaluateExit(profile)]))
         const primary = profiles[`tp${TARGET_PCT}_sl${STOP_PCT}`]
         trades.push({
-          date, ticker: meta.ticker, company: meta.company, signalTime: addMinutes(SIGNAL_END, 5),
+          date, ticker: meta.ticker, company: meta.company, signalTime: addMinutes(SIGNAL_END, BAR_MINUTES),
           entry: Math.round(entry * 100) / 100, ...primary,
           exact: false, confirmations, confirmationTotal: 6,
           metrics: { value, rsi14, relativeVolume, vwap, flowProxy },
@@ -209,7 +259,7 @@ const universe = await getUniverse()
 console.log(`Universe IDX: ${universe.length} ticker`)
 let completed = 0
 const results = await runPool(universe, async meta => {
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(meta.ticker)}.JK?range=${RANGE}&interval=5m&includePrePost=false&events=div%2Csplits`
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(meta.ticker)}.JK?range=${RANGE}&interval=${INTERVAL}&includePrePost=false&events=div%2Csplits`
   const chart = await fetchJson(url)
   const result = analyzeTicker(meta, chart)
   completed += 1
@@ -223,11 +273,13 @@ const failed = results.filter(result => result.error).length
 const dates = trades.map(trade => trade.date)
 const payload = {
   meta: {
-    generatedAt: new Date().toISOString(), source: 'Yahoo Finance chart (delayed/public)', interval: '5m', range: RANGE,
+    generatedAt: new Date().toISOString(), source: 'Yahoo Finance chart (delayed/public)', interval: INTERVAL, range: RANGE,
     universe: universe.length, successful, failed, from: dates[0] || null, to: dates.at(-1) || null,
     signalCutoffWib: SIGNAL_END, targetPct: TARGET_PCT, stopPct: STOP_PCT, transactionCostPct: COST_PCT,
+    limitCancelWib: LIMIT_CANCEL_TIME,
+    profileSet: PROFILE_SET,
     exactOrderBook: false,
-    methodology: `Sinyal memakai bar 09:00–${SIGNAL_END} WIB saja; entry setelah bar terakhir selesai sekitar ${addMinutes(SIGNAL_END, 5)}; exit target/stop konservatif atau close sesi. Kondisi bid>offer tidak tersedia sehingga hasil adalah price-core, bukan rumus lengkap.`,
+    methodology: `Sinyal memakai bar 09:00–${SIGNAL_END} WIB saja; entry setelah bar terakhir selesai sekitar ${addMinutes(SIGNAL_END, BAR_MINUTES)}; exit target/stop konservatif atau close sesi. Kondisi bid>offer tidak tersedia sehingga hasil adalah price-core, bukan rumus lengkap.`,
   },
   trades,
 }

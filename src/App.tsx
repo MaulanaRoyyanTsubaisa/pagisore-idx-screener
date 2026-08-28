@@ -3,10 +3,11 @@ import { Activity, AlertTriangle, BarChart3, BookOpenCheck, Database, FileUp, Fi
 import { demoMarket, demoTrades } from './data/demo'
 import { backtestRows, calculateStats, parseCsv, screenRows } from './lib/strategy'
 import { compactIdr, idr, pct } from './lib/format'
-import type { DataMode, MarketRow, ScreenerSettings, Signal, TradeRecord } from './types'
+import type { BrokerSummary, DataMode, MarketRow, PanicPayload, ScreenerSettings, Signal, TradeRecord } from './types'
 import { SignalTable } from './components/SignalTable'
 import { HistoryTable } from './components/HistoryTable'
 import { EquityChart } from './components/EquityChart'
+import { PanicPanel } from './components/PanicPanel'
 
 const defaultSettings: ScreenerSettings = {
   minValue: 100_000_000,
@@ -44,6 +45,10 @@ function App() {
   const [showFormula, setShowFormula] = useState(false)
   const [historyLabel, setHistoryLabel] = useState('Memuat backtest intraday nyata…')
   const [historyIsReal, setHistoryIsReal] = useState(false)
+  const [feedReady, setFeedReady] = useState(false)
+  const [brokerSummary, setBrokerSummary] = useState<BrokerSummary | null>(null)
+  const [brokerStatus, setBrokerStatus] = useState('')
+  const [panicPayload, setPanicPayload] = useState<PanicPayload | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
   const allSignals = useMemo(() => screenRows(market, settings), [market, settings])
@@ -51,7 +56,12 @@ function App() {
   const stats = useMemo(() => calculateStats(trades), [trades])
   const exactCount = signals.filter(s => s.exact).length
 
+  const refreshPanic = () => fetch('/api/panic')
+    .then(response => response.ok ? response.json() : Promise.reject(new Error('Panic feed belum tersedia')))
+    .then(setPanicPayload).catch(() => setPanicPayload(null))
+
   const refresh = async (requestedMode: DataMode = mode) => {
+    refreshPanic()
     if (requestedMode === 'demo' || requestedMode === 'import') {
       setUpdatedAt(new Date()); return
     }
@@ -62,8 +72,11 @@ function App() {
       const payload = await response.json()
       setMarket(payload.data)
       setMode(payload.mode)
+      setFeedReady(payload.mode === 'licensed')
       setUpdatedAt(new Date(payload.asOf))
     } catch (err) {
+      if (requestedMode === 'licensed') setMarket([])
+      setFeedReady(false)
       setError(err instanceof Error ? err.message : 'Gagal mengambil data')
     } finally { setLoading(false) }
   }
@@ -87,9 +100,20 @@ function App() {
     return () => window.clearInterval(timer)
   }, [mode])
 
+  useEffect(() => {
+    if (!selected || mode !== 'licensed' || !feedReady) { setBrokerSummary(null); setBrokerStatus(''); return }
+    const controller = new AbortController()
+    setBrokerSummary(null); setBrokerStatus('Memuat broker EOD…')
+    fetch(`/api/broker?ticker=${encodeURIComponent(selected.ticker)}`, { signal: controller.signal })
+      .then(response => response.ok ? response.json() : response.json().then(body => Promise.reject(new Error(body.error || 'Broker summary gagal'))))
+      .then(payload => { setBrokerSummary(payload); setBrokerStatus('') })
+      .catch(error => { if (error.name !== 'AbortError') setBrokerStatus(error instanceof Error ? error.message : 'Broker summary gagal') })
+    return () => controller.abort()
+  }, [selected, mode, feedReady])
+
   const setSource = (next: DataMode) => {
     setMode(next)
-    if (next === 'demo') { setMarket(demoMarket); setTrades(demoTrades); setError(''); setUpdatedAt(new Date()) }
+    if (next === 'demo') { setMarket(demoMarket); setTrades(demoTrades); setFeedReady(false); setError(''); setUpdatedAt(new Date()) }
     else refresh(next)
   }
 
@@ -130,6 +154,8 @@ function App() {
     setError(`Tuning walk-forward 70/30: minimum ${best.minConfirmations} konfirmasi; test n=${best.test.trades}, WR ${best.test.winRate.toFixed(1)}%, avg ${best.test.avgNetReturn.toFixed(2)}% — ${verdict}.`)
   }
 
+  const execution = selected ? executionState(selected) : null
+
   return <div className="app-shell">
     <aside className={mobileNav ? 'sidebar open' : 'sidebar'}>
       <div className="brand"><span>Pagi</span>Sore<button onClick={() => setMobileNav(false)} aria-label="Tutup navigasi"><X /></button></div>
@@ -153,16 +179,18 @@ function App() {
           <button className={mode === 'licensed' ? 'active' : ''} onClick={() => setSource('licensed')}>Rumus exact</button>
         </div></div>
 
-        <div className={mode === 'licensed' ? 'live-source exact-source' : 'live-source'}>
+        <div className={feedReady ? 'live-source exact-source' : 'live-source'}>
           <span className="live-dot" />
-          <div><strong>{mode === 'licensed' ? 'Rumus lengkap + order book' : 'Live price-core seluruh IDX'}</strong><small>{mode === 'licensed' ? 'Invezgo real-time, cache 5 menit' : 'TradingView delayed; kondisi bid > offer belum tersedia di feed gratis'}</small></div>
+          <div><strong>{mode === 'licensed' ? (feedReady ? 'Rumus lengkap + order book' : 'Feed exact belum aktif') : 'Live price-core seluruh IDX'}</strong><small>{mode === 'licensed' ? (feedReady ? 'Invezgo real-time, cache 5 menit' : 'Kandidat dikosongkan agar data proxy tidak dianggap sinyal exact') : 'TradingView delayed; kondisi bid > offer belum tersedia di feed gratis'}</small></div>
           <button onClick={() => refresh()} disabled={loading}>{loading ? 'Memindai…' : 'Scan sekarang'}</button>
         </div>
 
         {error && <div className={/^(Tuning|Backtest selesai|Filter diterapkan)/.test(error) ? 'notice info' : 'notice error'}><Info size={17} /><span>{error}</span><button onClick={() => setError('')}><X size={15} /></button></div>}
 
+        <PanicPanel payload={panicPayload} loading={loading} />
+
         <section className="kpis">
-          <div className="kpi"><div><span>Prioritas hari ini</span><Activity size={16} /></div><strong>{signals.length}</strong><small>Top 5 dari {allSignals.length} kandidat · {exactCount} exact</small></div>
+          <div className="kpi"><div><span>Prioritas hari ini</span><Activity size={16} /></div><strong>{signals.length}</strong><small>Top 5 watchlist · {exactCount} exact</small></div>
           <div className="kpi"><div><span>WR price-core</span><Target size={16} /></div><strong>{pct(stats.winRate)}</strong><small>{historyIsReal ? 'Belum memakai order book' : 'Fallback demo'} · n={stats.trades}</small></div>
           <div className="kpi"><div><span>Net price-core</span><TrendingUp size={16} /></div><strong className={stats.avgNetReturn >= 0 ? 'positive' : 'negative'}>{pct(stats.avgNetReturn, true)}</strong><small>Setelah biaya {pct(settings.transactionCost)} · belum lolos</small></div>
           <div className="kpi"><div><span>Nilai minimum</span><Database size={16} /></div><strong>{compactIdr(settings.minValue)}</strong><small>Dapat diubah pada filter</small></div>
@@ -203,7 +231,7 @@ function App() {
           </aside>
         </div>
       </div>
-      <footer><span><i />Sistem normal</span><b>{mode === 'demo' ? 'Data demo — bukan data real' : mode === 'proxy' ? 'Data proxy — order book tidak lengkap' : mode === 'licensed' ? 'Feed berlisensi aktif' : 'Data impor lokal'}</b><span>Waktu server {new Date().toLocaleTimeString('id-ID')}</span></footer>
+      <footer><span><i />Sistem normal</span><b>{mode === 'demo' ? 'Data demo — bukan data real' : mode === 'proxy' ? 'Data proxy — order book tidak lengkap' : mode === 'licensed' ? (feedReady ? 'Feed berlisensi aktif' : 'Feed berlisensi belum tersambung') : 'Data impor lokal'}</b><span>Waktu server {new Date().toLocaleTimeString('id-ID')}</span></footer>
     </main>
 
     {selected && <div className="drawer-backdrop" onClick={() => setSelected(null)}><aside className="detail-drawer" onClick={e => e.stopPropagation()}>
@@ -211,14 +239,22 @@ function App() {
       <small>Detail sinyal</small><h2>{selected.ticker}</h2><p>{selected.company}</p>
       <div className="price-hero"><span>Harga saat sinyal muncul</span><strong>{idr(selected.price)}</strong><em>Skor {selected.score}/100 · muncul {selected.signalTime}</em></div>
       <section className="trade-plan" aria-label={`Rencana transaksi ${selected.ticker}`}>
-        <div className="trade-plan-title"><div><small>RENCANA TRANSAKSI</small><strong>Beli pagi · jual hari yang sama</strong></div><span>{settings.targetPct.toFixed(1)}% TP minimum</span></div>
-        <div className="trade-step buy"><i>1</i><div><span>BELI / ENTRY</span><strong>{idr(selected.entryLow)}</strong><small>Pasang buy limit di harga ini. Jika harga sudah naik di atas {idr(selected.entryHigh)}, skip—jangan mengejar.</small></div></div>
+        <div className="trade-plan-title"><div><small>STATUS EKSEKUSI</small><strong>{execution?.title}</strong></div><span className={execution?.allowed ? '' : 'blocked'}>{execution?.label}</span></div>
+        <div className={execution?.allowed ? 'execution-note allowed' : 'execution-note'}>{execution?.detail}</div>
+        <div className="trade-step buy"><i>1</i><div><span>BELI / ENTRY</span><strong>{idr(selected.entryLow)}</strong><small>Pasang buy limit di harga ini hanya bila status exact masih aktif. Jika harga sudah naik, atau limit tidak terisi sebelum 10:30 WIB, cancel dan skip—jangan mengejar.</small></div></div>
         <div className="trade-step take-profit"><i>2</i><div><span>JUAL UNTUNG / TAKE PROFIT</span><strong>{idr(selected.target)}</strong><small>Target minimal +{settings.targetPct.toFixed(1)}% gross, kira-kira +{Math.max(0, settings.targetPct - settings.transactionCost).toFixed(1)}% setelah biaya {settings.transactionCost.toFixed(1)}% sebelum slippage.</small></div></div>
         <div className="trade-step stop-loss"><i>3</i><div><span>JUAL RUGI / STOP LOSS</span><strong>{idr(selected.stop)}</strong><small>Keluar bila harga menyentuh level ini. Estimasi hasil −{(settings.stopPct + settings.transactionCost).toFixed(1)}% setelah biaya, sebelum slippage.</small></div></div>
         <div className="close-rule"><b>Jika TP/SL belum tersentuh:</b> jual menjelang penutupan sesi II. Jika harga melewati TP, keuntungan tambahan tidak dijamin; gunakan trailing stop hanya bila siap memantaunya.</div>
       </section>
       <div className="level-grid compact-levels"><div><span>Bid/offer</span><b>{selected.bidOfferRatio?.toFixed(2) ?? 'Belum tersedia'}</b></div><div><span>Status data</span><b>{selected.exact ? 'Order book exact' : 'Price-core'}</b></div></div>
       <div className="indicator-grid"><div><span>RSI 14</span><b>{selected.rsi14?.toFixed(1) ?? '—'}</b></div><div><span>RVOL</span><b>{selected.relativeVolume ? `${selected.relativeVolume.toFixed(2)}×` : '—'}</b></div><div><span>VWAP</span><b>{selected.vwap ? idr(selected.vwap) : '—'}</b></div><div><span>Konfirmasi</span><b>{selected.confirmations}/{selected.confirmationTotal}</b></div></div>
+      <h3>Broker summary (EOD)</h3>
+      {!feedReady && <div className="broker-empty">Tersedia setelah feed Invezgo berlisensi aktif. Data broker bersifat EOD, bukan order flow real-time.</div>}
+      {brokerStatus && <div className="broker-empty">{brokerStatus}</div>}
+      {brokerSummary && <div className="broker-grid">
+        <div><span>Top net buy</span>{brokerSummary.topBuyers.map(row => <b key={`buy-${row.code}`}>{row.code}<em>{compactIdr(row.netValue)}</em></b>)}</div>
+        <div><span>Top net sell</span>{brokerSummary.topSellers.map(row => <b key={`sell-${row.code}`}>{row.code}<em>{compactIdr(row.netValue)}</em></b>)}</div>
+      </div>}
       <h3>Kenapa muncul?</h3>{selected.reasons.map(r => <div className="reason" key={r}><BookOpenCheck size={16} />{r}</div>)}
       {!selected.exact && <div className="drawer-warning"><AlertTriangle size={17} />Price-core ini belum memiliki order book agregat. Gunakan sebagai daftar cek, bukan sinyal rumus exact.</div>}
     </aside></div>}
@@ -230,6 +266,16 @@ function isMarketOpen() {
   const jakarta = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }))
   const minutes = jakarta.getHours() * 60 + jakarta.getMinutes()
   return jakarta.getDay() >= 1 && jakarta.getDay() <= 5 && minutes >= 540 && minutes <= 960
+}
+
+function executionState(signal: Signal) {
+  if (!signal.exact) return { allowed: false, label: 'SKIP', title: 'Watchlist saja', detail: 'Order book exact belum tersedia. Jangan eksekusi hanya dari price-core, EMA, RSI, atau volume proxy.' }
+  const now = new Date()
+  const jakarta = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }))
+  const minutes = jakarta.getHours() * 60 + jakarta.getMinutes()
+  const weekday = jakarta.getDay() >= 1 && jakarta.getDay() <= 5
+  if (!weekday || minutes < 540 || minutes >= 630) return { allowed: false, label: 'SKIP', title: 'Di luar jam entry', detail: 'Rencana order hanya berlaku pukul 09:00–10:30 WIB. Setelah itu sinyal kedaluwarsa; jangan mengejar harga.' }
+  return { allowed: true, label: 'EXACT', title: 'Boleh pasang limit order', detail: 'Rumus exact dan jendela waktu terpenuhi. Tetap batasi ukuran posisi karena backtest price-core belum menunjukkan edge positif.' }
 }
 
 export default App

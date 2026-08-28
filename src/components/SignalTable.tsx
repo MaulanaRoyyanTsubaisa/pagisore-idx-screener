@@ -15,12 +15,12 @@ export function SignalTable({ signals, totalCandidates, loading, onSelect }: { s
             <td>{s.bidOfferRatio?.toFixed(2) ?? '—'} {!s.exact && <span className="proxy-mark" title="Price-core; order book belum tersedia">PC</span>}</td>
             <td>{s.rsi14?.toFixed(0) ?? '—'}</td><td>{s.relativeVolume ? `${s.relativeVolume.toFixed(1)}×` : '—'}</td><td><strong className="entry-price">{idr(s.entryLow)}</strong><small>buy limit · jangan kejar</small></td><td><strong className="positive">{idr(s.target)}</strong><small>take profit</small></td><td><strong className="negative">{idr(s.stop)}</strong><small>stop loss</small></td>
             <td><span className="score"><i style={{ width: `${s.score}%` }} />{s.score}</span></td>
-            <td><span className={s.exact ? 'status active' : 'status proxy'}>{s.exact ? 'Exact' : 'Price-core'}</span><ChevronRight size={14} /></td>
+            <td><span className={s.exact ? 'status active' : 'status proxy'}>{s.exact ? 'Cek entry' : 'Pantau / skip'}</span><ChevronRight size={14} /></td>
           </tr>)}
           {!loading && !signals.length && <tr><td colSpan={12}><div className="empty-state"><AlertTriangle size={22} /><strong>Belum ada saham yang lolos</strong><span>Coba mode “Rumus inti” atau gunakan data demo untuk melihat alurnya.</span></div></td></tr>}
         </tbody>
       </table>
     </div>
-    <div className="table-foot"><span>Klik baris untuk panduan transaksi. Kandidat di luar top 5 di-skip.</span><span><b>PC</b> = lolos harga; order book belum diuji</span></div>
+    <div className="table-foot"><span>Klik baris untuk detail. Hanya status exact dalam jam entry yang boleh menjadi rencana order.</span><span><b>PC</b> = watchlist; bukan sinyal beli</span></div>
   </section>
 }

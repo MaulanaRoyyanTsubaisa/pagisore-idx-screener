@@ -2,8 +2,19 @@ import { readFile } from 'node:fs/promises'
 
 const payload = JSON.parse(await readFile(new URL(process.env.BACKTEST_INPUT || '../public/data/real-backtest.json', import.meta.url), 'utf8'))
 const profile = process.env.BACKTEST_PROFILE
+const evaluationProfile = process.env.BACKTEST_EVAL_PROFILE
+const minValue = Number(process.env.BACKTEST_MIN_VALUE || 0)
+const minPrice = Number(process.env.BACKTEST_MIN_PRICE || 0)
+const orderCount = Number(process.env.BACKTEST_ORDER_COUNT || 5)
+const rankIterations = Number(process.env.BACKTEST_RANK_ITERATIONS || 30000)
 if (profile && !payload.trades[0]?.profiles?.[profile]) throw new Error(`Profil ${profile} tidak tersedia. Buat data riset dengan BACKTEST_INCLUDE_PROFILES=true.`)
-const sourceTrades = profile ? payload.trades.map(trade => ({ ...trade, netReturn: trade.profiles[profile].netReturn })) : payload.trades
+if (evaluationProfile && !payload.trades[0]?.profiles?.[evaluationProfile]) throw new Error(`Profil evaluasi ${evaluationProfile} tidak tersedia.`)
+const profiledTrades = profile ? payload.trades.map(trade => {
+  const outcome = trade.profiles[profile]
+  return { ...trade, ...outcome, filled: outcome.filled !== false }
+}) : payload.trades.map(trade => ({ ...trade, filled: true }))
+const sourceTrades = profiledTrades.filter(trade =>
+  (trade.metrics?.value || 0) >= minValue && trade.entry >= minPrice)
 const dates = [...new Set(sourceTrades.map(trade => trade.date))].sort()
 const trainEnd = dates[Math.floor(dates.length * .6)]
 const validationEnd = dates[Math.floor(dates.length * .8)]
@@ -43,23 +54,32 @@ const trainDays = groups(prepared(train))
 const validationDays = groups(prepared(validation))
 const testDays = groups(prepared(test))
 
-const select = (days, weights, count = 5) => days.flatMap(day => day
+const select = (days, weights, count = orderCount) => days.flatMap(day => day
   .map(row => ({ ...row, score: row.features.reduce((sum, value, index) => sum + value * weights[index], 0) }))
   .toSorted((a, b) => b.score - a.score)
   .slice(0, count)
   .map(row => row.trade))
 
 const stats = trades => {
-  const wins = trades.filter(trade => trade.netReturn > 0)
+  const offered = trades.length
+  const filled = trades.filter(trade => trade.filled !== false)
+  const wins = filled.filter(trade => trade.netReturn > 0)
   const gains = wins.reduce((sum, trade) => sum + trade.netReturn, 0)
-  const losses = Math.abs(trades.filter(trade => trade.netReturn <= 0).reduce((sum, trade) => sum + trade.netReturn, 0))
+  const losses = Math.abs(filled.filter(trade => trade.netReturn <= 0).reduce((sum, trade) => sum + trade.netReturn, 0))
   return {
-    trades: trades.length,
-    winRate: 100 * wins.length / Math.max(1, trades.length),
-    avgNet: trades.reduce((sum, trade) => sum + trade.netReturn, 0) / Math.max(1, trades.length),
+    offered,
+    trades: filled.length,
+    fillRate: 100 * filled.length / Math.max(1, offered),
+    winRate: 100 * wins.length / Math.max(1, filled.length),
+    avgNet: filled.reduce((sum, trade) => sum + trade.netReturn, 0) / Math.max(1, filled.length),
     profitFactor: gains / Math.max(.0001, losses),
   }
 }
+const evaluateTrades = trades => evaluationProfile ? trades.map(trade => {
+  const outcome = trade.profiles[evaluationProfile]
+  return { ...trade, ...outcome, filled: outcome.filled !== false }
+}) : trades
+const evaluatedStats = trades => stats(evaluateTrades(trades))
 
 let seed = 20260828
 const random = () => {
@@ -69,7 +89,7 @@ const random = () => {
 
 const candidates = []
 const weightValues = [-2, -1, -.5, 0, .5, 1, 2]
-for (let iteration = 0; iteration < 30000; iteration += 1) {
+for (let iteration = 0; iteration < rankIterations; iteration += 1) {
   const weights = means.map(() => weightValues[Math.floor(random() * weightValues.length)])
   if (weights.every(value => value === 0)) continue
   const trainStats = stats(select(trainDays, weights))
@@ -83,11 +103,30 @@ const eligible = candidates
   .toSorted((a, b) => b.robustScore - a.robustScore)
 
 const best = eligible[0] || candidates.toSorted((a, b) => b.robustScore - a.robustScore)[0]
+const ensembleResults = [10, 50, 100, 500].flatMap(size => {
+  const members = eligible.slice(0, size)
+  if (!members.length) return []
+  const weights = means.map((_, index) => members.reduce((sum, member) => sum + member.weights[index], 0) / members.length)
+  const testSelection = select(testDays, weights)
+  return [{
+    size: members.length, weights,
+    train: evaluatedStats(select(trainDays, weights)), validation: evaluatedStats(select(validationDays, weights)), test: evaluatedStats(testSelection),
+    ...(process.env.BACKTEST_DETAIL === 'true' ? { testDetails: testSelection.map(trade => ({
+      date: trade.date, ticker: trade.ticker, filled: trade.filled, entry: trade.entry,
+      exit: trade.exit, exitMethod: trade.exitMethod, netReturn: trade.netReturn,
+    })) } : {}),
+  }]
+})
 console.log(JSON.stringify({
   data: process.env.BACKTEST_INPUT || '../public/data/real-backtest.json',
   profile: profile || 'primary',
+  evaluationProfile: evaluationProfile || profile || 'primary',
+  filters: { minValue, minPrice, orderCount, rankIterations },
+  featureNames: ['logValue', 'logRvol', 'flow', 'vwapGap', 'rsiNear58', 'confirmationRatio', 'logPrice'],
+  calibration: { means, deviations },
   split: { trainEnd, validationEnd, trainDates: trainDays.length, validationDates: validationDays.length, testDates: testDays.length },
   positiveOnTrainAndValidation: eligible.length,
   selected: { ...best, test: stats(select(testDays, best.weights)) },
+  ensembles: ensembleResults,
   topCandidates: eligible.slice(0, 10),
 }, null, 2))

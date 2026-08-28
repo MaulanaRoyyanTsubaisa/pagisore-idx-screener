@@ -61,7 +61,11 @@ const stats = trades => {
   }
 }
 
-const profileStats = (trades, profileId) => stats(trades.map(trade => ({ ...trade, netReturn: trade.profiles[profileId].netReturn })))
+const profileTrades = (trades, profileId) => trades.flatMap(trade => {
+  const outcome = trade.profiles[profileId]
+  return outcome.filled === false ? [] : [{ ...trade, entry: outcome.entry, netReturn: outcome.netReturn }]
+})
+const profileStats = (trades, profileId) => stats(profileTrades(trades, profileId))
 const profileIds = Object.keys(train[0]?.profiles || {})
 
 console.log(JSON.stringify({

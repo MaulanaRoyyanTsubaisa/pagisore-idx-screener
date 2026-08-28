@@ -99,3 +99,54 @@ export interface BacktestStats {
   profitFactor: number
   equity: number[]
 }
+
+export interface BrokerFlowRow {
+  code: string
+  name: string
+  netValue: number
+  buyValue: number
+  sellValue: number
+  buyAvg: number
+  sellAvg: number
+}
+
+export interface BrokerSummary {
+  ticker: string
+  from: string
+  to: string
+  asOf: 'EOD'
+  topBuyers: BrokerFlowRow[]
+  topSellers: BrokerFlowRow[]
+}
+
+export interface PanicCandidate {
+  ticker: string
+  company: string
+  currentClose: number
+  currentOpen: number
+  currentLow: number
+  currentHigh: number
+  currentChangePct: number
+  currentValue: number
+  priorClose: number
+  priorChangePct: number
+  signalChangePct: number
+  avgValue10: number
+  entry: number
+  entryFinal: boolean
+  takeProfitReference: number
+  emergencyStop: number
+  filled: boolean
+  status: 'TERISI' | 'MENUNGGU LIMIT' | 'TUNGGU OPEN' | 'KEDALUWARSA'
+}
+
+export interface PanicPayload {
+  asOf: string
+  source: string
+  universe: number
+  actionable: boolean
+  preOpen: boolean
+  sessionDate: string
+  nextTradingDate: string
+  active: PanicCandidate[]
+}
