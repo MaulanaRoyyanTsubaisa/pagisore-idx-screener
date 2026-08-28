@@ -1,6 +1,6 @@
 import type { Handler } from '@netlify/functions'
 
-const headers = { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'public, max-age=60, s-maxage=300' }
+const headers = { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'public, max-age=30, s-maxage=60' }
 const MIN_AVG_VALUE = 20_000_000_000
 
 const tick = (price: number) => price < 200 ? 1 : price < 500 ? 2 : price < 2000 ? 5 : price < 5000 ? 10 : 25
