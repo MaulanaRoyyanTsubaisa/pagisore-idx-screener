@@ -149,6 +149,15 @@ export interface PanicPayload {
   preOpen: boolean
   sessionDate: string
   nextTradingDate: string
+  rules: {
+    dropMinPct: number
+    dropMaxPct: number
+    minAverageValue: number
+    entryDiscountPct: number
+    maxPositions: number
+    exit: string
+    emergencyStopPct: number
+  }
   active: PanicCandidate[]
 }
 

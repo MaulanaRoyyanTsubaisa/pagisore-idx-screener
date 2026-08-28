@@ -1,4 +1,6 @@
 const MIN_AVG_VALUE = 20_000_000_000
+const ENTRY_DISCOUNT_PCT = 3
+const MAX_POSITIONS = 10
 
 const tick = (price: number) => price < 200 ? 1 : price < 500 ? 2 : price < 2000 ? 5 : price < 5000 ? 10 : 25
 const roundDown = (price: number) => Math.floor(price / tick(price)) * tick(price)
@@ -40,14 +42,14 @@ export async function buildPanicSnapshot(now = new Date()) {
   const activeSource = preOpen
     ? rows.filter(row => row.currentChangePct <= -5 && row.currentChangePct >= -15 && row.currentClose >= 100 && row.currentAvgValue10 >= MIN_AVG_VALUE).sort((a, b) => a.currentChangePct - b.currentChangePct)
     : rows.filter(row => row.priorChangePct <= -5 && row.priorChangePct >= -15 && row.priorClose >= 100 && row.priorAvgValue10 >= MIN_AVG_VALUE).sort((a, b) => a.priorChangePct - b.priorChangePct)
-  const active = activeSource.slice(0, 5).map(row => {
+  const active = activeSource.slice(0, MAX_POSITIONS).map(row => {
     const signalChangePct = preOpen ? row.currentChangePct : row.priorChangePct
     const referenceOpen = preOpen ? row.currentClose : row.currentOpen
-    const entry = roundDown(referenceOpen * .95)
+    const entry = roundDown(referenceOpen * (1 - ENTRY_DISCOUNT_PCT / 100))
     const filled = !preOpen && row.currentLow <= entry
     const status = preOpen ? 'TUNGGU OPEN' : filled ? 'LIMIT TERSENTUH' : actionable ? 'BOLEH PASANG LIMIT' : monitoring ? 'ENTRY BARU DITUTUP' : 'KEDALUWARSA'
     return { ...row, avgValue10: preOpen ? row.currentAvgValue10 : row.priorAvgValue10, signalChangePct, entry, entryFinal: !preOpen, takeProfitReference: roundNearest(entry * 1.04), emergencyStop: roundDown(entry * .93), filled, status }
   })
-  const next = rows.filter(row => row.currentChangePct <= -5 && row.currentChangePct >= -15 && row.currentClose >= 100 && row.currentAvgValue10 >= MIN_AVG_VALUE).sort((a, b) => a.currentChangePct - b.currentChangePct).slice(0, 5).map(row => ({ ...row, estimatedEntry: roundDown(row.currentClose * .95) }))
-  return { asOf: now.toISOString(), source: 'TradingView delayed/public', universe: rows.length, actionable, monitoring, preOpen, sessionDate: local.date, nextTradingDate: nextTradingDate(local.date), rules: { dropMinPct: -15, dropMaxPct: -5, minAverageValue: MIN_AVG_VALUE, entryDiscountPct: 5, maxPositions: 5, exit: 'close 15:45–15:50 WIB', emergencyStopPct: 7 }, active, next }
+  const next = rows.filter(row => row.currentChangePct <= -5 && row.currentChangePct >= -15 && row.currentClose >= 100 && row.currentAvgValue10 >= MIN_AVG_VALUE).sort((a, b) => a.currentChangePct - b.currentChangePct).slice(0, MAX_POSITIONS).map(row => ({ ...row, estimatedEntry: roundDown(row.currentClose * (1 - ENTRY_DISCOUNT_PCT / 100)) }))
+  return { asOf: now.toISOString(), source: 'TradingView delayed/public', universe: rows.length, actionable, monitoring, preOpen, sessionDate: local.date, nextTradingDate: nextTradingDate(local.date), rules: { dropMinPct: -15, dropMaxPct: -5, minAverageValue: MIN_AVG_VALUE, entryDiscountPct: ENTRY_DISCOUNT_PCT, maxPositions: MAX_POSITIONS, exit: 'close 15:45–15:50 WIB', emergencyStopPct: 7 }, active, next }
 }

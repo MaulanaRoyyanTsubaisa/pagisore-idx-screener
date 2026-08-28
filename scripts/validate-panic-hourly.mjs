@@ -2,6 +2,8 @@ import { mkdir, writeFile } from 'node:fs/promises'
 
 const CONCURRENCY = Number(process.env.PANIC_CONCURRENCY || 12)
 const COST_PCT = 0.3
+const ENTRY_DISCOUNT_PCT = Number(process.env.PANIC_ENTRY_DISCOUNT_PCT || 5)
+const MAX_POSITIONS = Number(process.env.PANIC_MAX_POSITIONS || 5)
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
 const completedSessionDates = new Set()
 
@@ -32,7 +34,7 @@ function local(timestamp) {
 }
 
 function tick(price) { return price < 200 ? 1 : price < 500 ? 2 : price < 2000 ? 5 : price < 5000 ? 10 : 25 }
-function entryFrom(open) { const candidate = open * .95; return Math.floor(candidate / tick(candidate)) * tick(candidate) }
+function entryFrom(open, discountPct = ENTRY_DISCOUNT_PCT) { const candidate = open * (1 - discountPct / 100); return Math.floor(candidate / tick(candidate)) * tick(candidate) }
 
 function analyze(meta, json) {
   const result = json?.chart?.result?.[0]
@@ -62,16 +64,25 @@ function analyze(meta, json) {
     // saham yang sudah menyentuh batas bawah beruntun (falling knife/ARB).
     if (changePct > -5 || changePct < -15 || signal.close < 100 || avgValue10 < 20e9) continue
     if (!completeSession) continue
-    const entry = entryFrom(next.open)
     const eligibleBars = next.bars.filter(bar => bar.time < '15:00')
-    const filled = eligibleBars.some(bar => bar.low <= entry)
-    rows.push({ ticker: meta.ticker, company: meta.company, signalDate: signal.date, tradeDate: next.date, changePct, avgValue10, open: next.open, low: next.low, close: next.close, entry, filled, netPct: filled ? (next.close / entry - 1) * 100 - COST_PCT : null })
+    const eligibleLow = Math.min(...eligibleBars.map(bar => bar.low))
+    const entry = entryFrom(next.open)
+    const filled = eligibleLow <= entry
+    rows.push({ ticker: meta.ticker, company: meta.company, signalDate: signal.date, tradeDate: next.date, changePct, avgValue10, open: next.open, low: next.low, eligibleLow, close: next.close, entry, filled, netPct: filled ? (next.close / entry - 1) * 100 - COST_PCT : null })
   }
   return rows
 }
 
-function stats(rows) {
-  const fills = rows.filter(row => row.filled)
+function reprice(rows, discountPct) {
+  return rows.map(row => {
+    const entry = entryFrom(row.open, discountPct)
+    const filled = row.eligibleLow <= entry
+    return { ...row, entry, filled, netPct: filled ? (row.close / entry - 1) * 100 - COST_PCT : null }
+  })
+}
+
+function stats(rows, discountPct = ENTRY_DISCOUNT_PCT) {
+  const fills = reprice(rows, discountPct).filter(row => row.filled)
   const values = fills.map(row => row.netPct).sort((a, b) => a - b)
   const wins = values.filter(value => value > 0)
   const loss = Math.abs(values.filter(value => value <= 0).reduce((sum, value) => sum + value, 0))
@@ -103,7 +114,14 @@ for (const [name, from, to] of [['validation', '2024-01-01', '2025-12-31'], ['ho
   console.log(name, 'all', stats(period), 'top3', stats(top(period, 3)), 'top5', stats(top(period, 5)))
 }
 
-const selected = top(trades, 5)
+console.log('\nentry sweep · top 10')
+for (const discountPct of [1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5]) {
+  const validation = top(trades.filter(row => row.tradeDate >= '2024-01-01' && row.tradeDate <= '2025-12-31'), 10)
+  const holdout = top(trades.filter(row => row.tradeDate >= '2026-01-01'), 10)
+  console.log(JSON.stringify({ discountPct, validation: stats(validation, discountPct), holdout: stats(holdout, discountPct) }))
+}
+
+const selected = reprice(top(trades, MAX_POSITIONS), ENTRY_DISCOUNT_PCT)
 const selectedByDate = Map.groupBy(selected, row => row.tradeDate)
 const historyDays = [...completedSessionDates].sort((a, b) => b.localeCompare(a)).slice(0, 90).map(date => ({
   date,
@@ -113,4 +131,4 @@ const historyDays = [...completedSessionDates].sort((a, b) => b.localeCompare(a)
 }))
 await mkdir(new URL('../public/data/', import.meta.url), { recursive: true })
 await writeFile(new URL('../public/data/panic-history.json', import.meta.url), JSON.stringify({ generatedAt: new Date().toISOString(), days: historyDays }))
-console.log(`saved ${historyDays.length} history days`)
+console.log(`saved ${historyDays.length} history days · top ${MAX_POSITIONS} · entry -${ENTRY_DISCOUNT_PCT}%`)
