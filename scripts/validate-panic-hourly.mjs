@@ -108,6 +108,8 @@ function top(rows, count) {
   return [...Map.groupBy(rows, row => row.tradeDate).values()].flatMap(day => [...day].sort((a, b) => a.changePct - b.changePct).slice(0, count))
 }
 
+const acceptedProductionDrop = row => row.changePct <= -12 || row.changePct >= -6
+
 console.log(`\ncoverage ${universe.length} tickers, failed ${failed}`)
 for (const [name, from, to] of [['validation', '2024-01-01', '2025-12-31'], ['holdout', '2026-01-01', '9999-12-31'], ['full', '0000-01-01', '9999-12-31']]) {
   const period = trades.filter(row => row.tradeDate >= from && row.tradeDate <= to)
@@ -121,7 +123,19 @@ for (const discountPct of [1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5]) {
   console.log(JSON.stringify({ discountPct, validation: stats(validation, discountPct), holdout: stats(holdout, discountPct) }))
 }
 
-const selected = reprice(top(trades, MAX_POSITIONS), ENTRY_DISCOUNT_PCT)
+console.log('\ndrop-band validation · top 10 · entry -3%')
+for (const [profile, accept] of [
+  ['all -15..-5', row => row.changePct >= -15 && row.changePct <= -5],
+  ['extremes <=-12 or >=-6', row => row.changePct <= -12 || row.changePct >= -6],
+  ['extremes <=-12.5 or >=-6', row => row.changePct <= -12.5 || row.changePct >= -6],
+  ['extremes <=-11.5 or >=-6', row => row.changePct <= -11.5 || row.changePct >= -6],
+]) {
+  const validation = top(trades.filter(row => row.tradeDate >= '2024-01-01' && row.tradeDate <= '2025-12-31' && accept(row)), 10)
+  const holdout = top(trades.filter(row => row.tradeDate >= '2026-01-01' && accept(row)), 10)
+  console.log(JSON.stringify({ profile, validation: stats(validation, 3), holdout: stats(holdout, 3) }))
+}
+
+const selected = reprice(top(trades.filter(acceptedProductionDrop), MAX_POSITIONS), ENTRY_DISCOUNT_PCT)
 const selectedByDate = Map.groupBy(selected, row => row.tradeDate)
 const historyDays = [...completedSessionDates].sort((a, b) => b.localeCompare(a)).slice(0, 90).map(date => ({
   date,

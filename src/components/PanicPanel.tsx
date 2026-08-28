@@ -13,13 +13,13 @@ export function PanicPanel({ payload, loading }: { payload: PanicPayload | null;
       <div><span className="eyebrow"><Zap size={14} /> SINYAL UTAMA · INI YANG DIGUNAKAN</span><h2 id="panic-title">Panic Limit · ikuti urutan prioritas</h2><p>Mulai dari #1, lalu #2 dan seterusnya · maksimal {maxPositions} antrean · hanya jika buy limit final tersentuh</p></div>
       <div className={payload?.actionable ? 'session-badge active' : 'session-badge'}><Clock3 size={15} />{payload?.actionable ? 'Boleh pasang limit final' : payload?.preOpen ? 'Tunggu open · belum entry' : 'Sesi entry selesai'}</div>
     </div>
-    <div className="panic-instructions"><b>Cara mengikuti sinyal:</b><span>① Order baru hanya 09:00–10:30 WIB</span><span>② Pasang hanya harga BUY LIMIT yang tertulis</span><span>③ Target historis sekitar 5 dari 10 terisi, bukan jaminan harian</span><span>④ Tidak terisi = batal/skip, jangan market buy</span></div>
+    <div className="panic-instructions"><b>Cara mengikuti sinyal:</b><span>① Order baru hanya 09:00–10:30 WIB</span><span>② Pasang hanya harga BUY LIMIT yang tertulis</span><span>③ Zona turun −12% s.d. −6% dibuang karena merusak hasil validasi</span><span>④ Tidak terisi = batal/skip, jangan market buy</span></div>
     {loading && !payload ? <div className="panic-empty">Memuat kandidat sesi…</div> : rows.length === 0 ? <div className="panic-empty">Tidak ada kandidat yang lolos. Ini berarti skip—jangan menurunkan standar hanya supaya ada transaksi.</div> : <div className="panic-grid">
       {rows.map((row, index) => <PanicCard key={row.ticker} row={row} rank={index + 1} entryDiscount={entryDiscount} expanded={expanded === row.ticker} onToggle={() => setExpanded(current => current === row.ticker ? '' : row.ticker)} />)}
     </div>}
     <div className="panic-proof">
-      <div><b>Uji 2024–2025 · top 10</b><span>610/1.280 terisi (47,7%) · WR 52,1% · avg +0,31% net</span></div>
-      <div><b>Holdout 2026 · top 10</b><span>433/811 terisi (53,4%) · WR 52,0% · avg +0,87% net</span></div>
+      <div><b>Uji kualitas 2024–2025</b><span>277/624 terisi (44,4%) · WR 53,4% · avg +0,64% net</span></div>
+      <div><b>Holdout kualitas 2026</b><span>262/512 terisi (51,2%) · WR 55,7% · avg +1,19% net</span></div>
       <div className="panic-warning"><ShieldAlert size={16} /><span>Backtest candle 60 menit, biaya 0,3%, order harus tersentuh sebelum 15:00. Hasil lampau bukan jaminan; data publik tertunda.</span></div>
     </div>
   </section>

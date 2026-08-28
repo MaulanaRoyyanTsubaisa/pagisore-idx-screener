@@ -22,7 +22,7 @@ Secara default dashboard langsung memindai seluruh IDX memakai mode **Rumus inti
 - Statistik setelah biaya: win rate, average net return, compounded return, max drawdown, dan profit factor.
 - Tuning konfirmasi memakai split kronologis 70/30 agar parameter dipilih pada train dan dilaporkan pada test.
 - Target default 1% gross dan stop 0,9%. Dengan biaya round-trip 0,3%, target teoritis bersih sekitar 0,7% sebelum slippage dan dampak antrean.
-- Shortlist top 10 memakai buy limit 3% di bawah open. Backtest menargetkan sekitar separuh order terisi; ini bukan jaminan lima transaksi terisi atau profit setiap hari.
+- Shortlist kualitas maksimal 10 memakai buy limit 3% di bawah open. Zona penurunan menengah di atas -12% dan di bawah -6% dikecualikan setelah validasi lintas periode; ini bukan jaminan lima transaksi terisi atau profit setiap hari.
 
 ## Menjalankan lokal
 
