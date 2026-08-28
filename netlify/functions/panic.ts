@@ -42,7 +42,8 @@ export const handler: Handler = async () => {
     const minutes = now.hour * 60 + now.minute
     const marketDay = !['Sat', 'Sun'].includes(now.weekday)
     const preOpen = marketDay && minutes < 540
-    const actionable = marketDay && minutes >= 540 && minutes < 900
+    const actionable = marketDay && minutes >= 540 && minutes < 630
+    const monitoring = marketDay && minutes >= 540 && minutes < 900
     const rows = (payload.data ?? []).map(item => {
       const [ticker, company, close, open, low, high, change, value, currentAverageVolume, previousClose, previousChange, previousAverageVolume] = item.d
       const currentClose = Number(close), currentOpen = Number(open), currentLow = Number(low), currentHigh = Number(high)
@@ -59,14 +60,16 @@ export const handler: Handler = async () => {
         const signalChangePct = preOpen ? row.currentChangePct : row.priorChangePct
         const referenceOpen = preOpen ? row.currentClose : row.currentOpen
         const entry = roundDown(referenceOpen * .95)
-        return { ...row, avgValue10: preOpen ? row.currentAvgValue10 : row.priorAvgValue10, signalChangePct, entry, entryFinal: !preOpen, takeProfitReference: roundNearest(entry * 1.04), emergencyStop: roundDown(entry * .93), filled: !preOpen && row.currentLow <= entry, status: preOpen ? 'TUNGGU OPEN' : actionable ? (row.currentLow <= entry ? 'TERISI' : 'MENUNGGU LIMIT') : 'KEDALUWARSA' }
+        const filled = !preOpen && row.currentLow <= entry
+        const status = preOpen ? 'TUNGGU OPEN' : filled ? 'LIMIT TERSENTUH' : actionable ? 'BOLEH PASANG LIMIT' : monitoring ? 'ENTRY BARU DITUTUP' : 'KEDALUWARSA'
+        return { ...row, avgValue10: preOpen ? row.currentAvgValue10 : row.priorAvgValue10, signalChangePct, entry, entryFinal: !preOpen, takeProfitReference: roundNearest(entry * 1.04), emergencyStop: roundDown(entry * .93), filled, status }
       })
     const next = rows.filter(row => row.currentChangePct <= -5 && row.currentChangePct >= -15 && row.currentClose >= 100 && row.currentAvgValue10 >= MIN_AVG_VALUE)
       .sort((a, b) => a.currentChangePct - b.currentChangePct).slice(0, 5).map(row => ({ ...row, estimatedEntry: roundDown(row.currentClose * .95) }))
 
     return { statusCode: 200, headers, body: JSON.stringify({
       asOf: new Date().toISOString(), source: 'TradingView delayed/public', universe: rows.length,
-      actionable, preOpen, sessionDate: now.date, nextTradingDate: nextTradingDate(now.date),
+      actionable, monitoring, preOpen, sessionDate: now.date, nextTradingDate: nextTradingDate(now.date),
       rules: { dropMinPct: -15, dropMaxPct: -5, minAverageValue: MIN_AVG_VALUE, entryDiscountPct: 5, maxPositions: 5, exit: 'close 15:45–15:50 WIB', emergencyStopPct: 7 },
       active, next,
     }) }

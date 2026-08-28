@@ -137,7 +137,7 @@ export interface PanicCandidate {
   takeProfitReference: number
   emergencyStop: number
   filled: boolean
-  status: 'TERISI' | 'MENUNGGU LIMIT' | 'TUNGGU OPEN' | 'KEDALUWARSA'
+  status: 'LIMIT TERSENTUH' | 'BOLEH PASANG LIMIT' | 'ENTRY BARU DITUTUP' | 'TUNGGU OPEN' | 'KEDALUWARSA'
 }
 
 export interface PanicPayload {
@@ -145,6 +145,7 @@ export interface PanicPayload {
   source: string
   universe: number
   actionable: boolean
+  monitoring: boolean
   preOpen: boolean
   sessionDate: string
   nextTradingDate: string

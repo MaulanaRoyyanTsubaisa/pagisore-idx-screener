@@ -174,23 +174,25 @@ function App() {
       </header>
 
       <div className="content" id="dashboard">
-        <div className="page-title"><div><h1>Dashboard screening</h1><p>Riset pola open = low dengan validasi momentum, likuiditas, dan order book.</p></div><div className="source-switch" aria-label="Sumber data">
-          <button className={mode === 'proxy' ? 'active' : ''} onClick={() => setSource('proxy')}>Proxy semua IDX</button>
+        <div className="page-title"><div><h1>Dashboard screening</h1><p>Panic Limit adalah sinyal utama; price-core di bawah hanya hasil riset yang belum lolos.</p></div><div className="source-switch" aria-label="Sumber data">
+          <button className={mode === 'proxy' ? 'active' : ''} onClick={() => setSource('proxy')}>Riset price-core</button>
           <button className={mode === 'licensed' ? 'active' : ''} onClick={() => setSource('licensed')}>Rumus exact</button>
         </div></div>
-
-        <div className={feedReady ? 'live-source exact-source' : 'live-source'}>
-          <span className="live-dot" />
-          <div><strong>{mode === 'licensed' ? (feedReady ? 'Rumus lengkap + order book' : 'Feed exact belum aktif') : 'Live price-core seluruh IDX'}</strong><small>{mode === 'licensed' ? (feedReady ? 'Invezgo real-time, cache 5 menit' : 'Kandidat dikosongkan agar data proxy tidak dianggap sinyal exact') : 'TradingView delayed; kondisi bid > offer belum tersedia di feed gratis'}</small></div>
-          <button onClick={() => refresh()} disabled={loading}>{loading ? 'Memindai…' : 'Scan sekarang'}</button>
-        </div>
 
         {error && <div className={/^(Tuning|Backtest selesai|Filter diterapkan)/.test(error) ? 'notice info' : 'notice error'}><Info size={17} /><span>{error}</span><button onClick={() => setError('')}><X size={15} /></button></div>}
 
         <PanicPanel payload={panicPayload} loading={loading} />
 
+        <div className="research-verdict"><ShieldAlert size={20} /><div><strong>BATAS PEMISAH — BAGIAN DI BAWAH BUKAN SINYAL ENTRY</strong><span>Price-core/rumus sepuh tanpa order book mencatat WR {stats.winRate.toFixed(2)}% dan rata-rata {stats.avgNetReturn.toFixed(2)}% net. Jangan ikuti kandidatnya dengan uang nyata.</span></div></div>
+
+        <div className={feedReady ? 'live-source exact-source' : 'live-source'}>
+          <span className="live-dot" />
+          <div><strong>{mode === 'licensed' ? (feedReady ? 'Rumus lengkap + order book' : 'Feed exact belum aktif') : 'RISET GAGAL · price-core seluruh IDX'}</strong><small>{mode === 'licensed' ? (feedReady ? 'Invezgo real-time, cache 5 menit' : 'Kandidat dikosongkan agar data proxy tidak dianggap sinyal exact') : `Jangan entry · WR ${stats.winRate.toFixed(2)}% · avg ${stats.avgNetReturn.toFixed(2)}% net · order book tidak tersedia`}</small></div>
+          <button onClick={() => refresh()} disabled={loading}>{loading ? 'Memindai…' : 'Scan sekarang'}</button>
+        </div>
+
         <section className="kpis">
-          <div className="kpi"><div><span>Prioritas hari ini</span><Activity size={16} /></div><strong>{signals.length}</strong><small>Top 5 watchlist · {exactCount} exact</small></div>
+          <div className="kpi"><div><span>Watchlist price-core</span><Activity size={16} /></div><strong>{signals.length}</strong><small>SKIP · bukan sinyal entry · {exactCount} exact</small></div>
           <div className="kpi"><div><span>WR price-core</span><Target size={16} /></div><strong>{pct(stats.winRate)}</strong><small>{historyIsReal ? 'Belum memakai order book' : 'Fallback demo'} · n={stats.trades}</small></div>
           <div className="kpi"><div><span>Net price-core</span><TrendingUp size={16} /></div><strong className={stats.avgNetReturn >= 0 ? 'positive' : 'negative'}>{pct(stats.avgNetReturn, true)}</strong><small>Setelah biaya {pct(settings.transactionCost)} · belum lolos</small></div>
           <div className="kpi"><div><span>Nilai minimum</span><Database size={16} /></div><strong>{compactIdr(settings.minValue)}</strong><small>Dapat diubah pada filter</small></div>
