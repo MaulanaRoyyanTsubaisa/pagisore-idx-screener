@@ -151,3 +151,27 @@ export interface PanicPayload {
   nextTradingDate: string
   active: PanicCandidate[]
 }
+
+export interface PanicHistoryCandidate {
+  rank: number
+  ticker: string
+  company: string
+  signalDate: string | null
+  tradeDate: string
+  changePct: number
+  avgValue10: number
+  open: number
+  low: number
+  close: number
+  entry: number
+  filled: boolean
+  status: 'TERISI' | 'TIDAK TERISI'
+  netPct: number | null
+}
+
+export interface PanicHistoryDay {
+  date: string
+  source: string
+  finalized: boolean
+  candidates: PanicHistoryCandidate[]
+}

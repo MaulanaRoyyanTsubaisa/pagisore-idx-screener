@@ -1,6 +1,9 @@
+import { mkdir, writeFile } from 'node:fs/promises'
+
 const CONCURRENCY = Number(process.env.PANIC_CONCURRENCY || 12)
 const COST_PCT = 0.3
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
+const completedSessionDates = new Set()
 
 async function fetchJson(url, options, attempts = 4) {
   let lastError
@@ -51,15 +54,18 @@ function analyze(meta, json) {
   const rows = []
   for (let i = 20; i < daily.length - 1; i += 1) {
     const signal = daily[i], previous = daily[i - 1], next = daily[i + 1]
+    const completeSession = next.bars.some(bar => bar.time >= '15:00')
+    if (completeSession) completedSessionDates.add(next.date)
     const changePct = (signal.close / previous.close - 1) * 100
-    const avgValue20 = daily.slice(i - 19, i + 1).reduce((sum, day) => sum + day.close * day.volume, 0) / 20
+    const avgValue10 = daily.slice(i - 9, i + 1).reduce((sum, day) => sum + day.close * day.volume, 0) / 10
     // Batasi penurunan ekstrem untuk mengurangi corporate-action artefacts dan
     // saham yang sudah menyentuh batas bawah beruntun (falling knife/ARB).
-    if (changePct > -5 || changePct < -15 || signal.close < 100 || avgValue20 < 20e9) continue
+    if (changePct > -5 || changePct < -15 || signal.close < 100 || avgValue10 < 20e9) continue
+    if (!completeSession) continue
     const entry = entryFrom(next.open)
     const eligibleBars = next.bars.filter(bar => bar.time < '15:00')
     const filled = eligibleBars.some(bar => bar.low <= entry)
-    rows.push({ ticker: meta.ticker, tradeDate: next.date, changePct, avgValue20, filled, netPct: filled ? (next.close / entry - 1) * 100 - COST_PCT : null })
+    rows.push({ ticker: meta.ticker, company: meta.company, signalDate: signal.date, tradeDate: next.date, changePct, avgValue10, open: next.open, low: next.low, close: next.close, entry, filled, netPct: filled ? (next.close / entry - 1) * 100 - COST_PCT : null })
   }
   return rows
 }
@@ -96,3 +102,15 @@ for (const [name, from, to] of [['validation', '2024-01-01', '2025-12-31'], ['ho
   const period = trades.filter(row => row.tradeDate >= from && row.tradeDate <= to)
   console.log(name, 'all', stats(period), 'top3', stats(top(period, 3)), 'top5', stats(top(period, 5)))
 }
+
+const selected = top(trades, 5)
+const selectedByDate = Map.groupBy(selected, row => row.tradeDate)
+const historyDays = [...completedSessionDates].sort((a, b) => b.localeCompare(a)).slice(0, 90).map(date => ({
+  date,
+  source: 'Yahoo Finance delayed/public · candle 60 menit',
+  finalized: true,
+  candidates: (selectedByDate.get(date) ?? []).sort((a, b) => a.changePct - b.changePct).map((row, index) => ({ ...row, rank: index + 1, status: row.filled ? 'TERISI' : 'TIDAK TERISI' })),
+}))
+await mkdir(new URL('../public/data/', import.meta.url), { recursive: true })
+await writeFile(new URL('../public/data/panic-history.json', import.meta.url), JSON.stringify({ generatedAt: new Date().toISOString(), days: historyDays }))
+console.log(`saved ${historyDays.length} history days`)

@@ -16,8 +16,8 @@ export function PanicPanel({ payload, loading }: { payload: PanicPayload | null;
       {rows.map((row, index) => <PanicCard key={row.ticker} row={row} rank={index + 1} expanded={expanded === row.ticker} onToggle={() => setExpanded(current => current === row.ticker ? '' : row.ticker)} />)}
     </div>}
     <div className="panic-proof">
-      <div><b>Uji 2024–2025</b><span>268 terisi · WR 56,0% · avg +1,04% net · PF 1,54</span></div>
-      <div><b>Holdout 2026</b><span>172 terisi · WR 50,0% · avg +1,24% net · PF 1,54</span></div>
+      <div><b>Uji 2024–2025</b><span>298 terisi · WR 55,0% · avg +0,73% net · PF 1,38</span></div>
+      <div><b>Holdout 2026</b><span>184 terisi · WR 50,5% · avg +1,03% net · PF 1,46</span></div>
       <div className="panic-warning"><ShieldAlert size={16} /><span>Backtest candle 60 menit, biaya 0,3%, order harus tersentuh sebelum 15:00. Hasil lampau bukan jaminan; data publik tertunda.</span></div>
     </div>
   </section>
