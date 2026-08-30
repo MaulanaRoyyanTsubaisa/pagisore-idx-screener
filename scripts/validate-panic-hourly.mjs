@@ -84,7 +84,7 @@ function analyze(meta, json) {
     const eligibleLow = Math.min(...eligibleBars.map(bar => bar.low))
     const entry = entryFrom(next.open)
     const filled = eligibleLow <= entry
-    rows.push({ ticker: meta.ticker, company: meta.company, signalDate: signal.date, tradeDate: next.date, changePct, avgValue10, open: next.open, low: next.low, eligibleLow, close: next.close, entry, filled, netPct: filled ? (next.close / entry - 1) * 100 - COST_PCT : null, intraday: eligibleBars.map(bar => ({ time: bar.time, high: bar.high, low: bar.low })) })
+    rows.push({ ticker: meta.ticker, company: meta.company, signalDate: signal.date, tradeDate: next.date, changePct, avgValue10, signalClose: signal.close, open: next.open, openGapPct: (next.open / signal.close - 1) * 100, low: next.low, eligibleLow, close: next.close, entry, filled, netPct: filled ? (next.close / entry - 1) * 100 - COST_PCT : null, intraday: eligibleBars.map(bar => ({ time: bar.time, high: bar.high, low: bar.low })) })
   }
   return { panicRows: rows, formulaRows }
 }
@@ -163,6 +163,10 @@ function top(rows, count) {
   return [...Map.groupBy(rows, row => row.tradeDate).values()].flatMap(day => [...day].sort((a, b) => a.changePct - b.changePct).slice(0, count))
 }
 
+function topWithRank(rows, count) {
+  return [...Map.groupBy(rows, row => row.tradeDate).values()].flatMap(day => [...day].sort((a, b) => a.changePct - b.changePct).slice(0, count).map((row, index) => ({ ...row, rank: index + 1 })))
+}
+
 const acceptedProductionDrop = row => row.changePct <= -12 || row.changePct >= -6
 
 console.log(`\ncoverage ${universe.length} tickers, failed ${failed}`)
@@ -202,6 +206,37 @@ for (const [name, from, to] of [['validation', '2024-01-01', '2025-12-31'], ['ho
   const period = formulaTrades.filter(row => row.tradeDate >= from && row.tradeDate <= to)
   const top10 = [...Map.groupBy(period, row => row.tradeDate).values()].flatMap(day => [...day].sort((a, b) => a.availableAfter.localeCompare(b.availableAfter) || b.cumulativeValue - a.cumulativeValue).slice(0, 10))
   console.log(name, 'all', simpleStats(period), 'top10', simpleStats(top10))
+}
+
+console.log('\nloss anatomy · quality top 10 · entry -3% · signal-time features only')
+const segments = [
+  ['drop deep <=-12', row => row.changePct <= -12],
+  ['drop mild >=-6', row => row.changePct >= -6],
+  ['gap <-3%', row => row.openGapPct < -3],
+  ['gap -3..0%', row => row.openGapPct >= -3 && row.openGapPct < 0],
+  ['gap 0..3%', row => row.openGapPct >= 0 && row.openGapPct < 3],
+  ['gap >=3%', row => row.openGapPct >= 3],
+  ['price <200', row => row.open < 200],
+  ['price 200..499', row => row.open >= 200 && row.open < 500],
+  ['price 500..1999', row => row.open >= 500 && row.open < 2000],
+  ['price >=2000', row => row.open >= 2000],
+  ['liq 20..50B', row => row.avgValue10 >= 20e9 && row.avgValue10 < 50e9],
+  ['liq 50..100B', row => row.avgValue10 >= 50e9 && row.avgValue10 < 100e9],
+  ['liq 100..200B', row => row.avgValue10 >= 100e9 && row.avgValue10 < 200e9],
+  ['liq >=200B', row => row.avgValue10 >= 200e9],
+  ['rank 1..3', row => row.rank <= 3],
+  ['rank 4..6', row => row.rank >= 4 && row.rank <= 6],
+  ['rank 7..10', row => row.rank >= 7],
+]
+for (const [periodName, from, to] of [['validation', '2024-01-01', '2025-12-31'], ['holdout', '2026-01-01', '9999-12-31']]) {
+  const period = topWithRank(trades.filter(row => row.tradeDate >= from && row.tradeDate <= to && acceptedProductionDrop(row)), 10)
+  console.log(periodName)
+  for (const [name, accept] of segments) console.log(JSON.stringify({ segment: name, ...stats(period.filter(accept), 3) }))
+}
+
+if (process.env.PANIC_CACHE_OUT) {
+  await writeFile(process.env.PANIC_CACHE_OUT, JSON.stringify({ generatedAt: new Date().toISOString(), trades, formulaTrades }))
+  console.log(`saved tuning cache ${process.env.PANIC_CACHE_OUT}`)
 }
 
 const selected = reprice(top(trades.filter(acceptedProductionDrop), MAX_POSITIONS), ENTRY_DISCOUNT_PCT)

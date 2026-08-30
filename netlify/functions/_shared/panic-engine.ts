@@ -48,7 +48,9 @@ export async function buildPanicSnapshot(now = new Date()) {
     const entry = roundDown(referenceOpen * (1 - ENTRY_DISCOUNT_PCT / 100))
     const filled = !preOpen && row.currentLow <= entry
     const status = preOpen ? 'TUNGGU OPEN' : filled ? 'LIMIT TERSENTUH' : actionable ? 'BOLEH PASANG LIMIT' : monitoring ? 'ENTRY BARU DITUTUP' : 'KEDALUWARSA'
-    return { ...row, avgValue10: preOpen ? row.currentAvgValue10 : row.priorAvgValue10, signalChangePct, entry, entryFinal: !preOpen, filled, status }
+    const qualityTier = signalChangePct <= -12 ? 'A' : 'B'
+    const qualityReason = qualityTier === 'A' ? 'Kapitulasinya lebih kuat dan stabil lintas periode' : 'Pullback ringan masih positif, tetapi edge lebih tipis'
+    return { ...row, avgValue10: preOpen ? row.currentAvgValue10 : row.priorAvgValue10, signalChangePct, qualityTier, qualityReason, entry, entryFinal: !preOpen, filled, status }
   })
   const next = rows.filter(row => row.currentChangePct <= -5 && row.currentChangePct >= -15 && acceptedDrop(row.currentChangePct) && row.currentClose >= 100 && row.currentAvgValue10 >= MIN_AVG_VALUE).sort((a, b) => a.currentChangePct - b.currentChangePct).slice(0, MAX_POSITIONS).map(row => ({ ...row, estimatedEntry: roundDown(row.currentClose * (1 - ENTRY_DISCOUNT_PCT / 100)) }))
   return { asOf: now.toISOString(), source: 'TradingView delayed/public', universe: rows.length, actionable, monitoring, preOpen, sessionDate: local.date, nextTradingDate: nextTradingDate(local.date), rules: { dropMinPct: -15, dropMaxPct: -5, minAverageValue: MIN_AVG_VALUE, entryDiscountPct: ENTRY_DISCOUNT_PCT, maxPositions: MAX_POSITIONS, exit: 'close resmi; eksekusi manual 15:45–15:49 WIB' }, active, next }

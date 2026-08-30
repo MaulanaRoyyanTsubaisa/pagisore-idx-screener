@@ -131,6 +131,8 @@ export interface PanicCandidate {
   priorClose: number
   priorChangePct: number
   signalChangePct: number
+  qualityTier: 'A' | 'B'
+  qualityReason: string
   avgValue10: number
   entry: number
   entryFinal: boolean
