@@ -78,7 +78,9 @@ function analyze(meta, json) {
     const avgValue10 = daily.slice(i - 9, i + 1).reduce((sum, day) => sum + day.close * day.volume, 0) / 10
     // Batasi penurunan ekstrem untuk mengurangi corporate-action artefacts dan
     // saham yang sudah menyentuh batas bawah beruntun (falling knife/ARB).
-    if (changePct > -5 || changePct < -15 || signal.close < 100 || avgValue10 < 20e9) continue
+    // Keep a wider research pool than production so reserve bands can be tested
+    // without silently changing the live strategy.
+    if (changePct > -1 || changePct < -20 || signal.close < 100 || avgValue10 < 20e9) continue
     if (!completeSession) continue
     const eligibleBars = next.bars.filter(bar => bar.time < '15:00')
     const eligibleLow = Math.min(...eligibleBars.map(bar => bar.low))
@@ -167,7 +169,27 @@ function topWithRank(rows, count) {
   return [...Map.groupBy(rows, row => row.tradeDate).values()].flatMap(day => [...day].sort((a, b) => a.changePct - b.changePct).slice(0, count).map((row, index) => ({ ...row, rank: index + 1 })))
 }
 
-const acceptedProductionDrop = row => row.changePct <= -12 || row.changePct >= -6
+const acceptedProductionDrop = row =>
+  (row.changePct >= -15 && row.changePct <= -12) ||
+  (row.changePct >= -6 && row.changePct <= -5)
+
+const acceptedReserveDrop = row =>
+  (row.changePct >= -8 && row.changePct <= -3) ||
+  (row.changePct > -3 && row.changePct <= -1 && row.openGapPct >= -3 && row.openGapPct < 0)
+
+function selectProductionHistory(rows) {
+  return [...Map.groupBy(rows.filter(row => row.open < 2500), row => row.tradeDate).values()].flatMap(day => {
+    const primary = day.filter(acceptedProductionDrop).sort((a, b) => {
+      const aTier = a.changePct <= -12 ? 0 : 1
+      const bTier = b.changePct <= -12 ? 0 : 1
+      return aTier - bTier || a.changePct - b.changePct || b.avgValue10 - a.avgValue10
+    }).slice(0, MAX_POSITIONS).map(row => ({ ...reprice([row], 3)[0], qualityTier: row.changePct <= -12 ? 'A' : 'B', entryDiscountPct: 3 }))
+    if (primary.length >= 5) return primary
+    const reserve = day.filter(row => !acceptedProductionDrop(row) && acceptedReserveDrop(row)).sort((a, b) => a.changePct - b.changePct || b.avgValue10 - a.avgValue10)
+      .slice(0, 5 - primary.length).map(row => ({ ...reprice([row], 5)[0], qualityTier: 'C', entryDiscountPct: 5 }))
+    return [...primary, ...reserve]
+  })
+}
 
 console.log(`\ncoverage ${universe.length} tickers, failed ${failed}`)
 for (const [name, from, to] of [['validation', '2024-01-01', '2025-12-31'], ['holdout', '2026-01-01', '9999-12-31'], ['full', '0000-01-01', '9999-12-31']]) {
@@ -239,7 +261,7 @@ if (process.env.PANIC_CACHE_OUT) {
   console.log(`saved tuning cache ${process.env.PANIC_CACHE_OUT}`)
 }
 
-const selected = reprice(top(trades.filter(acceptedProductionDrop), MAX_POSITIONS), ENTRY_DISCOUNT_PCT)
+const selected = selectProductionHistory(trades)
 const selectedByDate = Map.groupBy(selected, row => row.tradeDate)
 const historyDays = [...completedSessionDates].sort((a, b) => b.localeCompare(a)).slice(0, 90).map(date => ({
   date,

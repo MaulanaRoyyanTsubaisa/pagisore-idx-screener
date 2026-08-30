@@ -131,8 +131,10 @@ export interface PanicCandidate {
   priorClose: number
   priorChangePct: number
   signalChangePct: number
-  qualityTier: 'A' | 'B'
+  qualityTier: 'A' | 'B' | 'C'
   qualityReason: string
+  entryDiscountPct: number
+  openGapPct: number | null
   avgValue10: number
   entry: number
   entryFinal: boolean
@@ -154,6 +156,9 @@ export interface PanicPayload {
     dropMaxPct: number
     minAverageValue: number
     entryDiscountPct: number
+    reserveEntryDiscountPct: number
+    maxEntryPrice: number
+    minSignals: number
     maxPositions: number
     exit: string
   }
@@ -172,6 +177,8 @@ export interface PanicHistoryCandidate {
   low: number
   close: number
   entry: number
+  entryDiscountPct: number
+  qualityTier: 'A' | 'B' | 'C'
   filled: boolean
   status: 'TERISI' | 'TIDAK TERISI'
   netPct: number | null

@@ -10,6 +10,7 @@ export default async () => {
       rank: index + 1, ticker: row.ticker, company: row.company, signalDate: null,
       tradeDate: snapshot.sessionDate, changePct: row.signalChangePct, avgValue10: row.avgValue10,
       open: row.currentOpen, low: row.currentLow, close: row.currentClose, entry: row.entry,
+      entryDiscountPct: row.entryDiscountPct, qualityTier: row.qualityTier,
       filled: row.filled, status: row.filled ? 'TERISI' : 'TIDAK TERISI', netPct,
     }
   })

@@ -1,31 +1,26 @@
-# PagiSore
+# PagiSore · Panic Limit
 
-Dashboard riset screening saham IDX untuk menguji rumus intraday:
+Dashboard gratis untuk screening saham IDX dengan rencana **buy limit pagi, jual pada sore hari yang sama**. Feed live memakai scanner publik TradingView yang dapat tertunda; histori memakai candle publik Yahoo Finance 60 menit.
 
-```text
-open == low
-AND all_bid_volume > all_offer_volume
-AND current_high > previous_high
-AND current_low > previous_low
-AND current_value > 100000000
-```
+## Aturan produksi
 
-Secara default dashboard langsung memindai seluruh IDX memakai mode **Rumus inti**. Feed publik menghasilkan **price-core** (seluruh syarat harga/nilai transaksi); feed Invezgo menghasilkan rumus **exact**, termasuk total bid/offer. Mode **Seimbang** menambahkan EMA, VWAP, RSI, relative volume, candle, flow, spread, dan persistensi order book. Mode **Ketat** mewajibkan semua konfirmasi yang tersedia.
+- Seluruh universe IDX dipindai; likuiditas rata-rata 10 hari minimal Rp20 miliar.
+- Harga open harus di bawah Rp2.500.
+- Tier A: penurunan hari sinyal −15% sampai −12%; buy limit 3% di bawah open.
+- Tier B: penurunan hari sinyal −6% sampai −5%; buy limit 3% di bawah open.
+- Tier C: cadangan setelah A/B untuk melengkapi maksimal lima sinyal. Band utamanya −8% sampai −3% di luar A/B. Pullback −3% sampai −1% hanya lolos bila gap open berikutnya −3% sampai di bawah 0%. Buy limit Tier C 5% di bawah open.
+- Tier A/B selalu diprioritaskan. Tier C hanya ditambahkan bila A/B kurang dari lima; maksimum tetap 10 posisi.
+- Order baru hanya 09:00–10:30 WIB. Limit yang tidak tersentuh berarti batal/skip dan dana tetap tunai.
+- Exit manual 15:45–15:49 WIB; backtest memakai harga penutupan resmi dan biaya total 0,3%.
+- TP/SL tetap tidak digunakan: TP net +1% dengan stop 1%–7% semuanya negatif pada uji konservatif candle 60 menit.
 
-## Yang sudah bekerja
+Strategi tidak memaksa lima kandidat bila pasar tidak menyediakan lima saham yang lolos. Backtest bukan jaminan profit, dan aplikasi tidak mengeksekusi order broker.
 
-- Scanner seluruh IDX dengan shortlist lima prioritas, harga buy-limit, TP, SL, alasan sinyal, dan histori.
-- Pemindaian otomatis 843 saham IDX via TradingView scanner (data publik dapat tertunda). Karena tidak memiliki aggregate order book, hasilnya disebut **price-core**, bukan sinyal exact.
-- Integrasi resmi endpoint screener Invezgo untuk menjalankan formula lengkap real-time bila `INVEZGO_API_KEY` tersedia.
-- Backtest otomatis 5-menit Yahoo Finance, 843/843 ticker, dengan jendela sinyal pagi dan evaluasi bar sesudah entry sampai penutupan.
-- Impor CSV untuk data snapshot sinyal + order book + pergerakan setelah sinyal; template tersedia di `/sample-backtest.csv`. Impor langsung menghasilkan riwayat backtest baru.
-- Statistik setelah biaya: win rate, average net return, compounded return, max drawdown, dan profit factor.
-- Tuning konfirmasi memakai split kronologis 70/30 agar parameter dipilih pada train dan dilaporkan pada test.
-- Target default 1% gross dan stop 0,9%. Dengan biaya round-trip 0,3%, target teoritis bersih sekitar 0,7% sebelum slippage dan dampak antrean.
-- Shortlist kualitas maksimal 10 memakai buy limit 3% di bawah open. Zona penurunan menengah di atas -12% dan di bawah -6% dikecualikan setelah validasi lintas periode; ini bukan jaminan lima transaksi terisi atau profit setiap hari.
-- Exit statistik memakai harga penutupan resmi. TP net +1% dengan stop tetap 1%–7% tidak dipakai karena seluruh variasi negatif pada uji konservatif candle 60 menit.
-- Kandidat dibagi Tier A (penurunan <= -12%, edge lebih kuat) dan Tier B (penurunan -6% hingga -5%, edge lebih tipis tetapi masih positif lintas periode).
-- Net profit portofolio dihitung dengan pembagian modal ke 10 slot sejak pagi; order yang tidak terisi tetap kas. Kalkulator modal default Rp100 juta dapat diubah di dashboard.
+## Validasi
+
+Dataset riset mencakup 844 ticker saat ini. Parameter dipilih pada 2024–2025 dan diperiksa pada holdout 2026. Simulasi modal memakai 10 slot tetap sejak pagi; order yang tidak terisi tidak direalokasikan setelah melihat hasil.
+
+Keterbatasan utama: data publik tertunda, candle 60 menit tidak menunjukkan urutan tick intrabar, asumsi biaya belum memasukkan seluruh slippage/pajak, dan universe saat ini menimbulkan survivorship bias. Feed gratis tidak menyediakan aggregate order book atau broker flow, sehingga keduanya tidak diklaim atau dipalsukan.
 
 ## Menjalankan lokal
 
@@ -34,22 +29,10 @@ npm install
 npm run dev
 ```
 
-## Kontrak feed berlisensi
+Verifikasi:
 
-Untuk jalur yang paling langsung, set `INVEZGO_API_KEY` di environment Netlify. Function akan memanggil `POST https://api.invezgo.com/screener/screen` dengan formula:
-
-```text
-open == low && all_bid_volume > all_offer_volume && high > prev_high && low > prev_low && value > 100000000
+```bash
+npm run lint
+npm test
+npm run build
 ```
-
-Key hanya disimpan sebagai environment server dan tidak pernah dikirim ke browser.
-
-Sebagai alternatif, set `MARKET_DATA_URL` dan, bila perlu, `MARKET_DATA_TOKEN`.
-
-```json
-[{ "ticker":"BBRI", "company":"Bank Rakyat Indonesia", "price":4820, "open":4780, "low":4780, "high":4860, "prevLow":4700, "prevHigh":4800, "volume":106313, "value":512430000, "allBidVolume":1680000, "allOfferVolume":1000000, "signalTime":"09:15:12", "source":"licensed" }]
-```
-
-## Batasan penting
-
-Rumus ini bukan jaminan profit. Backtest yang sah membutuhkan snapshot/order-book log historis pada waktu sinyal. Kolom `futureHigh` dan `futureLow` harus hanya mencakup periode **setelah** `signalTime`; `close` adalah harga penutupan hari itu. Jika target dan stop sama-sama tersentuh tanpa tick sequence, engine memakai stop lebih dulu (konservatif). Tetap perhitungkan slippage, antrean, corporate actions, survivorship bias, dan out-of-sample testing. Mode proxy tidak menggantikan aggregate order book.

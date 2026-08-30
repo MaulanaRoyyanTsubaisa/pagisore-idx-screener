@@ -6,7 +6,7 @@ const day = (date: string, returns: Array<number | null>): PanicHistoryDay => ({
   date, source: 'test', finalized: true,
   candidates: returns.map((netPct, index) => ({
     rank: index + 1, ticker: `T${index}`, company: 'Test', signalDate: null, tradeDate: date,
-    changePct: -12, avgValue10: 20e9, open: 100, low: 95, close: 100, entry: 97,
+    changePct: -12, avgValue10: 20e9, open: 100, low: 95, close: 100, entry: 97, entryDiscountPct: 3, qualityTier: 'A',
     filled: netPct !== null, status: netPct === null ? 'TIDAK TERISI' : 'TERISI', netPct,
   })),
 })

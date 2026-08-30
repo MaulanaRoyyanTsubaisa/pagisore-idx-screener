@@ -33,8 +33,10 @@ function App() {
       const seed = seedResponse.ok ? await seedResponse.json() : { days: [] }
       const live = liveResponse.ok ? await liveResponse.json() : { days: [] }
       const byDate = new Map<string, PanicHistoryDay>()
-      for (const day of (seed.days ?? []) as PanicHistoryDay[]) byDate.set(day.date, day)
       for (const day of (live.days ?? []) as PanicHistoryDay[]) byDate.set(day.date, day)
+      // Rebuilt seed data is authoritative for dates that overlap snapshots
+      // saved by an older, retired strategy.
+      for (const day of (seed.days ?? []) as PanicHistoryDay[]) byDate.set(day.date, day)
       setHistoryDays([...byDate.values()].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 90))
     } catch {
       setHistoryDays([])
