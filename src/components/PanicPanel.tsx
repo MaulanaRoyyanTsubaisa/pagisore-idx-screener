@@ -18,14 +18,15 @@ export function PanicPanel({ payload, loading }: { payload: PanicPayload | null;
       {rows.map((row, index) => <PanicCard key={row.ticker} row={row} rank={index + 1} entryDiscount={entryDiscount} expanded={expanded === row.ticker} onToggle={() => setExpanded(current => current === row.ticker ? '' : row.ticker)} />)}
     </div>}
     <div className="panic-proof">
-      <div><b>Uji kualitas 2024–2025</b><span>277/624 terisi (44,4%) · WR 53,4% · avg +0,64% net</span></div>
-      <div><b>Holdout kualitas 2026</b><span>262/512 terisi (51,2%) · WR 55,7% · avg +1,19% net</span></div>
+      <div><b>Uji kualitas 2024–2025</b><span>Fill 44,6% · WR 53,4% · avg +0,64% · PF 1,38</span></div>
+      <div><b>Holdout kualitas 2026</b><span>Fill 51,2% · WR 55,7% · avg +1,19% · PF 1,56</span></div>
       <div className="panic-warning"><ShieldAlert size={16} /><span>Backtest candle 60 menit, biaya 0,3%, order harus tersentuh sebelum 15:00. Hasil lampau bukan jaminan; data publik tertunda.</span></div>
     </div>
   </section>
 }
 
 function PanicCard({ row, rank, entryDiscount, expanded, onToggle }: { row: PanicCandidate; rank: number; entryDiscount: number; expanded: boolean; onToggle: () => void }) {
+  const indicativeNet = row.filled ? (row.currentClose / row.entry - 1) * 100 - .3 : null
   return <article className="panic-card">
     <button onClick={onToggle} aria-expanded={expanded}>
       <div className="panic-rank">#{rank}</div><div className="panic-symbol"><strong>{row.ticker}</strong><span>{row.company}</span></div>
@@ -34,9 +35,9 @@ function PanicCard({ row, rank, entryDiscount, expanded, onToggle }: { row: Pani
     <div className="panic-levels"><div><span>{row.entryFinal ? 'OPEN HARI INI' : 'CLOSE REFERENSI'}</span><b>{idr(row.entryFinal ? row.currentOpen : row.currentClose)}</b></div><div className="entry"><span>{row.entryFinal ? `BUY LIMIT −${entryDiscount}%` : 'ESTIMASI LIMIT'}</span><b>{idr(row.entry)}</b></div><div><span>{row.entryFinal ? 'LOW SAAT INI' : 'FINAL SAAT OPEN'}</span><b>{row.entryFinal ? idr(row.currentLow) : 'Belum ada'}</b></div></div>
     <div className={row.filled ? 'panic-action touched' : 'panic-action'}>{row.filled ? `Harga limit ${idr(row.entry)} sudah tersentuh. Hanya dianggap terisi bila order sudah dipasang; jika belum, SKIP dan jangan beli di harga sekarang.` : row.status === 'BOLEH PASANG LIMIT' ? `Boleh antre buy limit ${idr(row.entry)} sampai 10:30 WIB. Jangan mengubahnya menjadi market buy.` : row.status === 'TUNGGU OPEN' ? 'Belum boleh entry. Muat ulang setelah open untuk mendapatkan harga limit final.' : 'Jangan memasang order baru. Status hanya untuk memantau order yang sudah dibuat sebelumnya.'}</div>
     {expanded && <div className="panic-details">
-      <div><span>Target referensi +4%</span><b>{idr(row.takeProfitReference)}</b><small>Boleh ambil untung; backtest utama tetap menjual di close.</small></div>
-      <div><span>Stop darurat −7%</span><b>{idr(row.emergencyStop)}</b><small>Batas risiko tambahan; tidak termasuk dalam statistik backtest close-exit dan tidak menjamin harga eksekusi saat gap/ARB.</small></div>
-      <div><span>Exit utama</span><b>15:45–15:50 WIB</b><small>{row.entryFinal ? 'Jika limit tidak pernah terisi, batalkan. Jangan market buy dan jangan mengejar.' : 'Angka entry masih estimasi. Sesudah pasar buka, muat ulang dan cek open aktual di aplikasi broker.'}</small></div>
+      <div><span>P&amp;L indikatif saat ini</span><b className={indicativeNet === null ? '' : indicativeNet >= 0 ? 'positive' : 'negative'}>{indicativeNet === null ? 'Belum terisi' : pct(indicativeNet, true)}</b><small>Harga publik tertunda dan asumsi biaya total 0,3%; bukan saldo broker.</small></div>
+      <div><span>Exit aturan tervalidasi</span><b>15:45–15:49 WIB</b><small>Backtest memakai harga penutupan resmi. Eksekusi manual sebelum prapenutupan dapat berbeda dari close resmi.</small></div>
+      <div><span>TP/SL tetap</span><b>TIDAK DIGUNAKAN</b><small>TP net +1% dengan SL 1%–7% gagal pada uji konservatif candle 60 menit. Jangan memakai angka +4%/−7% lama.</small></div>
       <div><span>Likuiditas 10 hari</span><b>{compactIdr(row.avgValue10)}</b><small>Proxy gratis; bukan order book dan bukan broker flow.</small></div>
     </div>}
   </article>

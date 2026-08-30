@@ -9,14 +9,44 @@ export function PanicHistory({ days, loading }: { days: PanicHistoryDay[]; loadi
     const candidates = days.flatMap(day => day.candidates)
     const fills = candidates.filter(row => row.filled && Number.isFinite(row.netPct))
     const wins = fills.filter(row => Number(row.netPct) > 0)
+    const losses = fills.filter(row => Number(row.netPct) <= 0)
+    const values = fills.map(row => Number(row.netPct)).sort((a, b) => a - b)
     const total = fills.reduce((sum, row) => sum + Number(row.netPct), 0)
-    return { candidates: candidates.length, fills: fills.length, skipped: candidates.length - fills.length, fillRate: candidates.length ? fills.length / candidates.length * 100 : 0, wins: wins.length, winRate: fills.length ? wins.length / fills.length * 100 : 0, average: fills.length ? total / fills.length : 0 }
+    const grossWin = wins.reduce((sum, row) => sum + Number(row.netPct), 0)
+    const grossLoss = Math.abs(losses.reduce((sum, row) => sum + Number(row.netPct), 0))
+    const dailyReturns = days.map(day => {
+      const dayFills = day.candidates.filter(row => row.filled && Number.isFinite(row.netPct))
+      return dayFills.length ? dayFills.reduce((sum, row) => sum + Number(row.netPct), 0) / dayFills.length : 0
+    }).reverse()
+    let equity = 1, peak = 1, maxDrawdown = 0
+    for (const dailyReturn of dailyReturns) {
+      equity *= 1 + dailyReturn / 100
+      peak = Math.max(peak, equity)
+      maxDrawdown = Math.min(maxDrawdown, (equity / peak - 1) * 100)
+    }
+    const activeDays = dailyReturns.filter(value => value !== 0)
+    const winningDays = activeDays.filter(value => value > 0)
+    return {
+      candidates: candidates.length, fills: fills.length, skipped: candidates.length - fills.length,
+      fillRate: candidates.length ? fills.length / candidates.length * 100 : 0,
+      winRate: fills.length ? wins.length / fills.length * 100 : 0,
+      average: fills.length ? total / fills.length : 0,
+      median: values.length ? values[Math.floor((values.length - 1) / 2)] : 0,
+      profitFactor: grossLoss ? grossWin / grossLoss : 0,
+      averageWin: wins.length ? grossWin / wins.length : 0,
+      averageLoss: losses.length ? -grossLoss / losses.length : 0,
+      worst: values[0] ?? 0,
+      activeDays: activeDays.length,
+      winningDayRate: activeDays.length ? winningDays.length / activeDays.length * 100 : 0,
+      maxDrawdown,
+    }
   }, [days])
 
   return <section className="history-section" id="history">
     <div className="history-heading"><div><span className="eyebrow"><History size={14} /> DATA PASAR HISTORIS · BUKAN DEMO</span><h2>Histori Panic Limit</h2><p>Ini simulasi aturan pada OHLCV pasar, bukan transaksi akun broker. Sesi produksi otomatis masuk setelah 16:35 WIB; hari tanpa kandidat berarti skip.</p></div></div>
     <div className="no-fill-explainer"><b>TIDAK TERISI = TIDAK ADA TRANSAKSI</b><span>Low hari itu tidak mencapai buy limit. Dana tetap tunai, hasil Rp0, dan baris tersebut tidak dihitung sebagai menang maupun kalah.</span></div>
-    <div className="history-kpis"><div><span>Kandidat · 90 sesi terbaru</span><b>{stats.candidates}</b><small>{stats.skipped} skip/tidak terisi</small></div><div><span>Terisi · 90 sesi terbaru</span><b>{stats.fills}</b><small>Fill rate {pct(stats.fillRate)}</small></div><div><span>WR · 90 sesi terbaru</span><b>{pct(stats.winRate)}</b><small>Hanya order terisi</small></div><div><span>Avg net · 90 sesi terbaru</span><b className={stats.average >= 0 ? 'positive' : 'negative'}>{pct(stats.average, true)}</b><small>Setelah biaya 0,3%</small></div></div>
+    <div className="history-kpis"><div><span>Kandidat · 90 sesi terbaru</span><b>{stats.candidates}</b><small>{stats.skipped} skip/tidak terisi</small></div><div><span>Terisi · 90 sesi terbaru</span><b>{stats.fills}</b><small>Fill rate {pct(stats.fillRate)}</small></div><div><span>WR · 90 sesi terbaru</span><b>{pct(stats.winRate)}</b><small>Hanya order terisi</small></div><div><span>Avg net · 90 sesi terbaru</span><b className={stats.average >= 0 ? 'positive' : 'negative'}>{pct(stats.average, true)}</b><small>Setelah biaya 0,3%</small></div><div><span>Median net</span><b className={stats.median >= 0 ? 'positive' : 'negative'}>{pct(stats.median, true)}</b><small>Lebih tahan terhadap outlier</small></div><div><span>Profit factor</span><b className={stats.profitFactor >= 1 ? 'positive' : 'negative'}>{stats.profitFactor.toFixed(2)}</b><small>Target sehat di atas 1</small></div></div>
+    <div className="history-risk"><b>REALITAS RISIKO</b><span>Rata-rata menang {pct(stats.averageWin, true)} · rata-rata kalah {pct(stats.averageLoss, true)} · kerugian terburuk {pct(stats.worst, true)}. Hanya {stats.activeDays}/90 hari memiliki transaksi; WR hari aktif {pct(stats.winningDayRate)} dan max drawdown simulasi equal-weight {pct(stats.maxDrawdown, true)}. Avg positif bukan berarti setiap transaksi aman.</span></div>
     {loading && !days.length ? <div className="history-empty">Memuat histori…</div> : !days.length ? <div className="history-empty">Belum ada sesi historis yang tersimpan.</div> : <div className="history-days">
       {days.map(day => {
         const filled = day.candidates.filter(row => row.filled)

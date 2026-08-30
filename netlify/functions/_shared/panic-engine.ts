@@ -4,7 +4,6 @@ const MAX_POSITIONS = 10
 
 const tick = (price: number) => price < 200 ? 1 : price < 500 ? 2 : price < 2000 ? 5 : price < 5000 ? 10 : 25
 const roundDown = (price: number) => Math.floor(price / tick(price)) * tick(price)
-const roundNearest = (price: number) => Math.round(price / tick(price)) * tick(price)
 const acceptedDrop = (changePct: number) => changePct <= -12 || changePct >= -6
 
 function jakartaNow(now: Date) {
@@ -49,8 +48,8 @@ export async function buildPanicSnapshot(now = new Date()) {
     const entry = roundDown(referenceOpen * (1 - ENTRY_DISCOUNT_PCT / 100))
     const filled = !preOpen && row.currentLow <= entry
     const status = preOpen ? 'TUNGGU OPEN' : filled ? 'LIMIT TERSENTUH' : actionable ? 'BOLEH PASANG LIMIT' : monitoring ? 'ENTRY BARU DITUTUP' : 'KEDALUWARSA'
-    return { ...row, avgValue10: preOpen ? row.currentAvgValue10 : row.priorAvgValue10, signalChangePct, entry, entryFinal: !preOpen, takeProfitReference: roundNearest(entry * 1.04), emergencyStop: roundDown(entry * .93), filled, status }
+    return { ...row, avgValue10: preOpen ? row.currentAvgValue10 : row.priorAvgValue10, signalChangePct, entry, entryFinal: !preOpen, filled, status }
   })
   const next = rows.filter(row => row.currentChangePct <= -5 && row.currentChangePct >= -15 && acceptedDrop(row.currentChangePct) && row.currentClose >= 100 && row.currentAvgValue10 >= MIN_AVG_VALUE).sort((a, b) => a.currentChangePct - b.currentChangePct).slice(0, MAX_POSITIONS).map(row => ({ ...row, estimatedEntry: roundDown(row.currentClose * (1 - ENTRY_DISCOUNT_PCT / 100)) }))
-  return { asOf: now.toISOString(), source: 'TradingView delayed/public', universe: rows.length, actionable, monitoring, preOpen, sessionDate: local.date, nextTradingDate: nextTradingDate(local.date), rules: { dropMinPct: -15, dropMaxPct: -5, minAverageValue: MIN_AVG_VALUE, entryDiscountPct: ENTRY_DISCOUNT_PCT, maxPositions: MAX_POSITIONS, exit: 'close 15:45–15:50 WIB', emergencyStopPct: 7 }, active, next }
+  return { asOf: now.toISOString(), source: 'TradingView delayed/public', universe: rows.length, actionable, monitoring, preOpen, sessionDate: local.date, nextTradingDate: nextTradingDate(local.date), rules: { dropMinPct: -15, dropMaxPct: -5, minAverageValue: MIN_AVG_VALUE, entryDiscountPct: ENTRY_DISCOUNT_PCT, maxPositions: MAX_POSITIONS, exit: 'close resmi; eksekusi manual 15:45–15:49 WIB' }, active, next }
 }

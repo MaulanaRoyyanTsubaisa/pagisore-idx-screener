@@ -134,8 +134,6 @@ export interface PanicCandidate {
   avgValue10: number
   entry: number
   entryFinal: boolean
-  takeProfitReference: number
-  emergencyStop: number
   filled: boolean
   status: 'LIMIT TERSENTUH' | 'BOLEH PASANG LIMIT' | 'ENTRY BARU DITUTUP' | 'TUNGGU OPEN' | 'KEDALUWARSA'
 }
@@ -156,7 +154,6 @@ export interface PanicPayload {
     entryDiscountPct: number
     maxPositions: number
     exit: string
-    emergencyStopPct: number
   }
   active: PanicCandidate[]
 }
