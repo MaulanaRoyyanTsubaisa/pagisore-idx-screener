@@ -174,6 +174,32 @@ for (const [tier, accept] of [
   }))
 }
 
+console.log('coverage extension · shallow non-negative gap as last reserve')
+function evaluateLastReserve(discountPct) {
+  const selectedByDate = new Map([...byDate].map(([date, original]) => {
+    const rows = original.filter(row => row.open < 2500)
+    const primary = rows.filter(productionBand).sort(primarySort).slice(0, SLOTS).map(row => reprice(row, 3))
+    if (primary.length >= MIN_SIGNALS) return [date, primary]
+    const strong = rows.filter(row => !productionBand(row) && compositeAccept(row)).sort(reserveSort)
+      .slice(0, MIN_SIGNALS - primary.length).map(row => ({ ...reprice(row, 5), reserveClass: 'strong' }))
+    const used = new Set([...primary, ...strong].map(row => row.ticker))
+    const last = rows.filter(row => !used.has(row.ticker) && row.changePct > -3 && row.changePct <= -1 && row.openGapPct >= 0 && row.openGapPct < 3)
+      .sort(reserveSort).slice(0, MIN_SIGNALS - primary.length - strong.length).map(row => ({ ...reprice(row, discountPct), reserveClass: 'last' }))
+    return [date, [...primary, ...strong, ...last]]
+  }))
+  const selected = [...selectedByDate.values()].flat()
+  const last = selected.filter(row => row.reserveClass === 'last')
+  return {
+    discountPct,
+    coverage5: [...selectedByDate.values()].filter(rows => rows.length >= MIN_SIGNALS).length / selectedByDate.size * 100,
+    avgSignals: selected.length / selectedByDate.size,
+    avgFills: selected.filter(row => row.filled).length / selectedByDate.size,
+    annual: Object.fromEntries([2024, 2025, 2026].map(year => [year, portfolio(selectedByDate, year)])),
+    lastAnnual: Object.fromEntries([2024, 2025, 2026].map(year => [year, fillStats(last.filter(row => row.tradeDate.startsWith(`${year}-`)))])),
+  }
+}
+for (const discountPct of [5, 5.5, 6, 6.5, 7, 8, 9, 10]) console.log(JSON.stringify(evaluateLastReserve(discountPct)))
+
 if (!passed.length) {
   console.log('best portfolio-only profiles')
   for (const result of results.filter(item => [2024, 2025, 2026].every(year => item.annual[year].returnPct > 0)).sort((a, b) => b.coverage5 - a.coverage5).slice(0, 20)) {
