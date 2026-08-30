@@ -25,6 +25,7 @@ Secara default dashboard langsung memindai seluruh IDX memakai mode **Rumus inti
 - Shortlist kualitas maksimal 10 memakai buy limit 3% di bawah open. Zona penurunan menengah di atas -12% dan di bawah -6% dikecualikan setelah validasi lintas periode; ini bukan jaminan lima transaksi terisi atau profit setiap hari.
 - Exit statistik memakai harga penutupan resmi. TP net +1% dengan stop tetap 1%–7% tidak dipakai karena seluruh variasi negatif pada uji konservatif candle 60 menit.
 - Kandidat dibagi Tier A (penurunan <= -12%, edge lebih kuat) dan Tier B (penurunan -6% hingga -5%, edge lebih tipis tetapi masih positif lintas periode).
+- Net profit portofolio dihitung dengan pembagian modal ke 10 slot sejak pagi; order yang tidak terisi tetap kas. Kalkulator modal default Rp100 juta dapat diubah di dashboard.
 
 ## Menjalankan lokal
 

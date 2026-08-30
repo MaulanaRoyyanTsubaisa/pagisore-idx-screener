@@ -77,7 +77,7 @@ function App() {
         <div className="page-title"><div><h1>PagiSore · Panic Limit</h1><p>Hanya data dan sinyal strategi yang dipakai. Riset price-core yang gagal telah dihapus dari dashboard.</p></div></div>
         {error && <div className="notice error"><ShieldAlert size={17} /><span>{error}</span><button onClick={() => setError('')}><X size={15} /></button></div>}
         <div id="signals"><PanicPanel payload={panicPayload} loading={loading} /></div>
-        <PanicHistory days={historyDays} loading={loading} />
+        <PanicHistory days={historyDays} loading={loading} maxPositions={panicPayload?.rules.maxPositions ?? 10} />
         <section className="risk-panel clean-risk"><ShieldAlert size={23} /><div><strong>Batas penggunaan</strong><p>Data publik dapat terlambat. Cocokkan open, antrean, dan status order di aplikasi broker. Backtest dan histori tidak menjamin hasil berikutnya; jangan market buy atau mengejar harga.</p></div></section>
       </div>
       <footer><span><i />Sistem normal</span><b>Panic Limit · data dan histori asli</b><span>Waktu server {new Date().toLocaleTimeString('id-ID')}</span></footer>
